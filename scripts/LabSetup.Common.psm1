@@ -6,6 +6,7 @@ $script:WingetExitCodes = @{
     UpgradeVersionNotNewer = -1978335153
     PackageAlreadyInstalled = -1978335135
     NoApplicableInstaller = -1978335216
+    NoInstalledPackage   = -1978335212
 }
 
 function Confirm-LabAdministrator {
@@ -115,6 +116,70 @@ function Get-WingetExecutable {
     return $command.Source
 }
 
+function Show-LabProcessSpinner {
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.Process]$Process,
+        [string]$Activity = 'Processing',
+        [int]$UpdateIntervalMilliseconds = 200
+    )
+
+    $activityLabel = if ([string]::IsNullOrWhiteSpace($Activity)) { 'Processing' } else { $Activity }
+    $spinnerChars = @('|', '/', '-', '\')
+    $progressId = Get-Random
+    $index = 0
+
+    if ($Process.HasExited) {
+        Write-Progress -Activity $activityLabel -Completed -Id $progressId
+        return
+    }
+
+    while (-not $Process.HasExited) {
+        $status = "{0} {1}" -f $activityLabel, $spinnerChars[$index]
+        Write-Progress -Activity $activityLabel -Status $status -PercentComplete -1 -Id $progressId
+        Start-Sleep -Milliseconds $UpdateIntervalMilliseconds
+        $index = ($index + 1) % $spinnerChars.Length
+    }
+
+    Write-Progress -Activity $activityLabel -Completed -Id $progressId
+}
+
+function Invoke-ProcessWithSpinner {
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [string]$Activity,
+        [string]$WorkingDirectory
+    )
+
+    $startParams = @{
+        FilePath     = $FilePath
+        ArgumentList = $ArgumentList
+        NoNewWindow  = $true
+        PassThru     = $true
+    }
+
+    if ($WorkingDirectory) {
+        $startParams['WorkingDirectory'] = $WorkingDirectory
+    }
+
+    try {
+        $process = Start-Process @startParams
+    }
+    catch {
+        throw "Failed to start ${FilePath}: $($_.Exception.Message)"
+    }
+
+    if (-not $process) {
+        throw "Failed to launch $FilePath."
+    }
+
+    Show-LabProcessSpinner -Process $process -Activity $Activity
+    $process.WaitForExit()
+    return $process
+}
+
 function Invoke-Winget {
     param(
         [Parameter(Mandatory)]
@@ -122,7 +187,9 @@ function Invoke-Winget {
         [int[]]$AcceptableExitCodes = @(),
         [switch]$IgnoreError,
         [string]$LogFilePath,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [string]$ActivityMessage,
+        [switch]$ShowSpinner
     )
 
     $winget = Get-WingetExecutable
@@ -157,7 +224,6 @@ function Invoke-Winget {
         ArgumentList = $argumentsWithLogging
         NoNewWindow  = $true
         PassThru     = $true
-        Wait         = $true
     }
 
     try {
@@ -171,6 +237,11 @@ function Invoke-Winget {
         throw 'Failed to launch winget process.'
     }
 
+    if ($ShowSpinner -and -not [string]::IsNullOrWhiteSpace($ActivityMessage)) {
+        Show-LabProcessSpinner -Process $process -Activity $ActivityMessage
+    }
+
+    $process.WaitForExit()
     $exitCode = $process.ExitCode
     $isAcceptable = ($exitCode -eq 0) -or ($AcceptableExitCodes -contains $exitCode)
 
@@ -608,6 +679,49 @@ function Set-TaskbarPin {
     return $false
 }
 
+function Get-WingetInstallPrecheckResult {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Package,
+        [Parameter(Mandatory)]
+        [string]$LogRoot,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    $id = $Package.id
+    $sanitizedId = ($id -replace '[^A-Za-z0-9_.-]', '_')
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
+    $logPath = Join-Path -Path $LogRoot -ChildPath ("{0}_precheck_{1}.log" -f $sanitizedId, $timestamp)
+
+    $arguments = @(
+        'upgrade',
+        '--id', $id,
+        '--exact',
+        '--accept-package-agreements',
+        '--accept-source-agreements'
+    )
+
+    $precheckExitCodes = @(
+        $script:WingetExitCodes.UpdateNotApplicable,
+        $script:WingetExitCodes.UpgradeVersionNotNewer,
+        $script:WingetExitCodes.PackageAlreadyInstalled,
+        $script:WingetExitCodes.NoApplicableInstaller,
+        $script:WingetExitCodes.NoInstalledPackage
+    )
+
+    $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $precheckExitCodes -IgnoreError -LogWriter $LogWriter -LogFilePath $logPath
+
+    switch ($result.ExitCode) {
+        0 { return 'UpdateAvailable' }
+        $script:WingetExitCodes.UpdateNotApplicable { return 'UpToDate' }
+        $script:WingetExitCodes.UpgradeVersionNotNewer { return 'AlreadyInstalled' }
+        $script:WingetExitCodes.PackageAlreadyInstalled { return 'AlreadyInstalled' }
+        $script:WingetExitCodes.NoApplicableInstaller { return 'ScopeMismatch' }
+        $script:WingetExitCodes.NoInstalledPackage { return 'NotInstalled' }
+        default { return 'Unknown' }
+    }
+}
+
 function Install-WingetPackage {
     param(
         [Parameter(Mandatory)]
@@ -627,6 +741,17 @@ function Install-WingetPackage {
         $wingetLogRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
     }
     New-LabDirectory -Path $wingetLogRoot
+
+    $alwaysInstall = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'alwaysInstall')
+    $skipUpgradePrecheck = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'skipUpgradePrecheck')
+    $precheckStatus = 'Unknown'
+    if (-not $alwaysInstall -and -not $skipUpgradePrecheck) {
+        $precheckStatus = Get-WingetInstallPrecheckResult -Package $Package -LogRoot $wingetLogRoot -LogWriter $LogWriter
+        if ($precheckStatus -in @('UpToDate', 'AlreadyInstalled')) {
+            Write-LabLog -Message "$displayName is already at the latest version; skipping winget install." -LogWriter $LogWriter
+            return
+        }
+    }
 
     $baseArgs = @(
         'install',
@@ -707,7 +832,8 @@ function Install-WingetPackage {
             $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
             $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
             $arguments = @($baseArgs + $scopeArgs + $attempt.ExtraArgs)
-            $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath
+            $activity = "Installing $displayName"
+            $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath -ActivityMessage $activity -ShowSpinner
 
             switch ($result.ExitCode) {
                 0 {
@@ -809,7 +935,7 @@ function Install-ManualPackage {
                 'ALLUSERS=1'
             )
             Write-LabLog -Message "Installing $($Package.displayName) via msiexec..." -LogWriter $LogWriter
-            $process = Start-Process -FilePath $msiExec -ArgumentList $msiArgs -Wait -PassThru
+            $process = Invoke-ProcessWithSpinner -FilePath $msiExec -ArgumentList $msiArgs -Activity "Installing $($Package.displayName) via msiexec"
             if ($process.ExitCode -ne 0) {
                 throw "msiexec failed for $($Package.displayName) with exit code $($process.ExitCode)."
             }
@@ -880,7 +1006,7 @@ function Install-MikTexFromInstaller {
     }
 
     Write-LabLog -Message 'Running MiKTeX installer in unattended mode...' -LogWriter $LogWriter
-    $process = Start-Process -FilePath $destination -ArgumentList $argumentList -Wait -PassThru
+    $process = Invoke-ProcessWithSpinner -FilePath $destination -ArgumentList $argumentList -Activity 'Running MiKTeX installer in unattended mode...'
     if ($process.ExitCode -ne 0) {
         throw "MiKTeX installer exited with code $($process.ExitCode)."
     }
@@ -895,7 +1021,23 @@ function Install-LabPackages {
         [System.IO.StreamWriter]$LogWriter
     )
 
-    foreach ($package in $Config.wingetPackages) {
+    $packages = @()
+    if ($Config.wingetPackages) {
+        $packages = @($Config.wingetPackages | ForEach-Object { $_ })
+    }
+
+    $total = $packages.Count
+    if ($total -eq 0) { return }
+
+    $progressActivity = 'Installing lab packages'
+    $index = 0
+
+    foreach ($package in $packages) {
+        $index++
+        $statusLabel = if ($package.displayName) { "Processing $($package.displayName)" } else { "Processing package $index of $total" }
+        $percentComplete = [math]::Floor((($index - 1) / [double]$total) * 100)
+        Write-Progress -Activity $progressActivity -Status $statusLabel -PercentComplete $percentComplete -Id 2001
+
         $hasInstallerMetadata = $false
         if ($package -is [System.Collections.IDictionary] -and $package.ContainsKey('installer')) {
             $installerMetadata = $package['installer']
@@ -908,6 +1050,8 @@ function Install-LabPackages {
             Install-WingetPackage -Package $package -LogWriter $LogWriter -Config $Config
         }
     }
+
+    Write-Progress -Activity $progressActivity -Completed -Id 2001
 }
 
 function Set-LabTaskbarPins {
@@ -970,8 +1114,8 @@ function Set-VoltaToolchain {
     if ($Config.volta.nodeVersion) {
         $nodeArgs = @('install', "node@$($Config.volta.nodeVersion)")
         Write-LabLog -Message "Configuring Volta Node version $($Config.volta.nodeVersion)..." -LogWriter $LogWriter
-        & $voltaExe @nodeArgs | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $nodeProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList $nodeArgs -Activity "Configuring Volta Node $($Config.volta.nodeVersion)"
+        if ($nodeProcess.ExitCode -ne 0) {
             throw "Volta failed to install Node $($Config.volta.nodeVersion)."
         }
     }
@@ -979,8 +1123,8 @@ function Set-VoltaToolchain {
     if ($Config.volta.globalPackages) {
         foreach ($pkg in $Config.volta.globalPackages) {
             Write-LabLog -Message "Installing global Volta package $pkg ..." -LogWriter $LogWriter
-            & $voltaExe 'install' $pkg | Out-Null
-            if ($LASTEXITCODE -ne 0) {
+            $pkgProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList @('install', $pkg) -Activity "Installing Volta package $pkg"
+            if ($pkgProcess.ExitCode -ne 0) {
                 throw "Volta failed to install global package $pkg."
             }
         }
@@ -1044,9 +1188,16 @@ function Set-UvToolchain {
     if ($Config.uv.pythonVersions) {
         foreach ($version in $Config.uv.pythonVersions) {
             Write-LabLog -Message "Installing Python $version via uv..." -LogWriter $LogWriter
-            & $uvExe 'python' 'install' $version '--install-dir' $uvPythonRoot | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw "uv failed to install Python $version."
+            $pythonShim = Join-Path -Path $uvBin -ChildPath ("python{0}.exe" -f $version)
+            if (Test-Path -LiteralPath $pythonShim -PathType Leaf) {
+                Write-LabLog -Message "Python $version already provisioned in uv bin directory; skipping install." -LogWriter $LogWriter
+                continue
+            }
+
+            $uvArgs = @('python', 'install', $version, '--install-dir', $uvPythonRoot, '--force')
+            $uvProcess = Invoke-ProcessWithSpinner -FilePath $uvExe -ArgumentList $uvArgs -Activity "Installing Python $version via uv"
+            if ($uvProcess.ExitCode -ne 0) {
+                throw "uv failed to install Python $version (exit code $($uvProcess.ExitCode))."
             }
         }
     }
@@ -1135,19 +1286,20 @@ function Set-MikTexConfiguration {
 
     if ($Config.tex.autoInstallMissingPackages) {
         Write-LabLog -Message 'Enabling MiKTeX automatic package installation (admin)...' -LogWriter $LogWriter
-        & $initexmf '--admin' '--set-config-value' '[MPM]AutoInstall=1' | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $autoInstallProcess = Invoke-ProcessWithSpinner -FilePath $initexmf -ArgumentList @('--admin', '--set-config-value', '[MPM]AutoInstall=1') -Activity 'Enabling MiKTeX automatic package installation (admin)...'
+        if ($autoInstallProcess.ExitCode -ne 0) {
             throw 'initexmf failed to set AutoInstall for MiKTeX.'
         }
     }
 
     if ($Config.tex.refreshFileDatabase) {
         Write-LabLog -Message 'Refreshing MiKTeX filename database (admin)...' -LogWriter $LogWriter
-        & $initexmf '--admin' '--update-fndb' | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $refreshProcess = Invoke-ProcessWithSpinner -FilePath $initexmf -ArgumentList @('--admin', '--update-fndb') -Activity 'Refreshing MiKTeX filename database (admin)...'
+        if ($refreshProcess.ExitCode -ne 0) {
             throw 'initexmf failed to refresh the MiKTeX FNDB.'
         }
     }
 }
 
 Export-ModuleMember -Function *-*
+
