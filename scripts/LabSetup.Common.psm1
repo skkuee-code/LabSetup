@@ -645,13 +645,19 @@ function Set-UvToolchain {
 
     if (-not $Config.uv) { return }
 
-    $uvCandidates = @(
-        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\uv.exe' }),
-        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\bin\uv.exe' }),
-        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'uv\uv.exe' }),
-        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'uv\bin\uv.exe' }),
-        'uv'
-    ) | Where-Object { $_ }
+    $uvCandidates = @()
+    if ($env:ProgramFiles) {
+        $uvCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\uv.exe'
+        $uvCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\bin\uv.exe'
+    }
+
+    $programFilesX86 = ${env:ProgramFiles(x86)}
+    if ($programFilesX86) {
+        $uvCandidates += Join-Path -Path $programFilesX86 -ChildPath 'uv\uv.exe'
+        $uvCandidates += Join-Path -Path $programFilesX86 -ChildPath 'uv\bin\uv.exe'
+    }
+
+    $uvCandidates += 'uv'
     $uvExe = Resolve-ExecutableFromCandidates -Candidates $uvCandidates
     if (-not $uvExe) {
         $uvPackageId = Get-OptionalPropertyValue -InputObject $Config.uv -PropertyName 'packageId'
@@ -716,20 +722,31 @@ function Set-MikTexConfiguration {
 
     if (-not $Config.tex) { return }
 
-    $initexmfCandidates = @(
-        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe' }),
-        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\initexmf.exe' }),
-        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe' }),
-        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\initexmf.exe' }),
-        'initexmf'
-    ) | Where-Object { $_ }
-    $mpmCandidates = @(
-        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe' }),
-        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\mpm.exe' }),
-        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe' }),
-        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\mpm.exe' }),
-        'mpm'
-    ) | Where-Object { $_ }
+    $programFilesX86 = ${env:ProgramFiles(x86)}
+
+    $initexmfCandidates = @()
+    if ($env:ProgramFiles) {
+        $initexmfCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe'
+        $initexmfCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\initexmf.exe'
+    }
+
+    if ($programFilesX86) {
+        $initexmfCandidates += Join-Path -Path $programFilesX86 -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe'
+        $initexmfCandidates += Join-Path -Path $programFilesX86 -ChildPath 'MiKTeX\miktex\bin\initexmf.exe'
+    }
+    $initexmfCandidates += 'initexmf'
+
+    $mpmCandidates = @()
+    if ($env:ProgramFiles) {
+        $mpmCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe'
+        $mpmCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\mpm.exe'
+    }
+
+    if ($programFilesX86) {
+        $mpmCandidates += Join-Path -Path $programFilesX86 -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe'
+        $mpmCandidates += Join-Path -Path $programFilesX86 -ChildPath 'MiKTeX\miktex\bin\mpm.exe'
+    }
+    $mpmCandidates += 'mpm'
 
     $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
     $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
