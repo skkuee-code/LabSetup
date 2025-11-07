@@ -191,8 +191,18 @@ function Resolve-ExecutableFromCandidates {
 
     foreach ($candidate in $Candidates) {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+        try {
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return (Resolve-Path -LiteralPath $candidate).Path
+            }
+        }
+        catch {
+            # Ignore and fall back to command resolution
+        }
+
+        $command = Get-Command -Name $candidate -ErrorAction SilentlyContinue
+        if ($command -and $command.Source) {
+            return $command.Source
         }
     }
 
@@ -636,14 +646,16 @@ function Set-UvToolchain {
     if (-not $Config.uv) { return }
 
     $uvCandidates = @(
-        (Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\uv.exe'),
-        (Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'uv\uv.exe'),
+        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\uv.exe' }),
+        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\bin\uv.exe' }),
+        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'uv\uv.exe' }),
+        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'uv\bin\uv.exe' }),
         'uv'
-    )
+    ) | Where-Object { $_ }
     $uvExe = Resolve-ExecutableFromCandidates -Candidates $uvCandidates
     if (-not $uvExe) {
         $uvPackageId = Get-OptionalPropertyValue -InputObject $Config.uv -PropertyName 'packageId'
-        if (-not $uvPackageId) { $uvPackageId = 'Astral.Uv' }
+        if (-not $uvPackageId) { $uvPackageId = 'astral-sh.uv' }
         $uvPackage = Get-LabPackageById -Config $Config -PackageId $uvPackageId
         if ($uvPackage) {
             Write-LabLog -Message "uv executable not found; attempting winget install for $uvPackageId ..." -LogWriter $LogWriter

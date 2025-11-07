@@ -56,7 +56,7 @@
             }
         },
         {
-            "id": "Astral.Uv",
+            "id": "astral-sh.uv",
             "displayName": "uv",
             "silent": true
         },
