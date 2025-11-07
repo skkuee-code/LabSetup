@@ -664,6 +664,9 @@ function Install-ManualPackage {
         if ($command.Parameters.ContainsKey('UseBasicParsing')) {
             $invokeParameters['UseBasicParsing'] = $true
         }
+        if ($command.Parameters.ContainsKey('AllowInsecureRedirect')) {
+            $invokeParameters['AllowInsecureRedirect'] = $true
+        }
         Invoke-WebRequest @invokeParameters
     } else {
         Write-LabLog -Message "Using cached installer for $($Package.displayName)." -LogWriter $LogWriter
@@ -734,6 +737,9 @@ function Install-MikTexFromInstaller {
         $command = Get-Command -Name Invoke-WebRequest
         if ($command.Parameters.ContainsKey('UseBasicParsing')) {
             $invokeParameters['UseBasicParsing'] = $true
+        }
+        if ($command.Parameters.ContainsKey('AllowInsecureRedirect')) {
+            $invokeParameters['AllowInsecureRedirect'] = $true
         }
         Invoke-WebRequest @invokeParameters
     } else {

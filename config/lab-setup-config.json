@@ -54,7 +54,7 @@
             ],
             "installer": {
                 "type": "msi",
-                "downloadUrl": "https://www.layouteditor.net/download/layout-20250528-win-64bit-installer.msi",
+                "downloadUrl": "https://www.layouteditor.net/releases/20250528/layout-20250528-win-64bit-installer.msi",
                 "expectedFileName": "layout-20250528-win-64bit-installer.msi"
             }
         },
