@@ -7,6 +7,8 @@ $script:WingetExitCodes = @{
     PackageAlreadyInstalled = -1978335135
     NoApplicableInstaller = -1978335216
     NoInstalledPackage   = -1978335212
+    InstallAlreadyInstalled = -1978334963
+    InstallDowngrade = -1978334962
 }
 
 $script:WingetDefaultAcceptableExitCodes = @(
@@ -825,7 +827,9 @@ function Install-WingetPackage {
         $script:WingetExitCodes.UpdateNotApplicable,
         $script:WingetExitCodes.UpgradeVersionNotNewer,
         $script:WingetExitCodes.PackageAlreadyInstalled,
-        $script:WingetExitCodes.NoApplicableInstaller
+        $script:WingetExitCodes.NoApplicableInstaller,
+        $script:WingetExitCodes.InstallAlreadyInstalled,
+        $script:WingetExitCodes.InstallDowngrade
     )
 
     $silentFlag = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent')
@@ -876,6 +880,10 @@ function Install-WingetPackage {
                     Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
                     return
                 }
+                $script:WingetExitCodes.InstallAlreadyInstalled {
+                    Write-LabLog -Message "$displayName is already installed (install exit code); skipping." -LogWriter $LogWriter
+                    return
+                }
                 $script:WingetExitCodes.NoApplicableInstaller {
                     if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
                         Write-LabLog -Message "$displayName does not provide silent install metadata; retrying with interactive mode." -LogWriter $LogWriter
@@ -887,6 +895,10 @@ function Install-WingetPackage {
                         Write-LabLog -Message "$displayName does not offer an installer for scope '$currentScope'; retrying with scope '$nextScope'." -LogWriter $LogWriter
                         continue ScopeAttempt
                     }
+                }
+                $script:WingetExitCodes.InstallDowngrade {
+                    Write-LabLog -Message "$displayName install would downgrade the currently-installed version; leaving existing install in place." -LogWriter $LogWriter
+                    return
                 }
             }
 
