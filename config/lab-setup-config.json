@@ -102,7 +102,16 @@
     },
     "tex": {
         "autoInstallMissingPackages": true,
-        "refreshFileDatabase": true
+        "refreshFileDatabase": true,
+        "installer": {
+            "downloadUrl": "https://mirrors.ctan.org/systems/win32/miktex/setup/windows-x64/basic-miktex-24.1-x64.exe",
+            "expectedFileName": "basic-miktex-24.1-x64.exe",
+            "arguments": [
+                "--unattended",
+                "--shared",
+                "--package-set=basic"
+            ]
+        }
     },
     "taskbar": {
         "retryCount": 3,

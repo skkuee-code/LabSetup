@@ -538,6 +538,69 @@ function Install-ManualPackage {
     Write-LabLog -Message "Completed $($Package.displayName) installation." -LogWriter $LogWriter
 }
 
+function Install-MikTexFromInstaller {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Config,
+        [Parameter(Mandatory)]
+        [hashtable]$TexConfig,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    $installerConfig = Get-OptionalPropertyValue -InputObject $TexConfig -PropertyName 'installer'
+    if (-not ($installerConfig -is [System.Collections.IDictionary])) {
+        return $false
+    }
+
+    $downloadUrl = Get-OptionalPropertyValue -InputObject $installerConfig -PropertyName 'downloadUrl'
+    if ([string]::IsNullOrWhiteSpace($downloadUrl)) {
+        return $false
+    }
+
+    $fileName = Get-OptionalPropertyValue -InputObject $installerConfig -PropertyName 'expectedFileName'
+    if ([string]::IsNullOrWhiteSpace($fileName)) {
+        $fileName = Split-Path -Path $downloadUrl -Leaf
+    }
+
+    $cacheDir = Join-Path -Path $Config.programDataPath -ChildPath 'cache'
+    New-LabDirectory -Path $cacheDir
+    $destination = Join-Path -Path $cacheDir -ChildPath $fileName
+
+    if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+        Write-LabLog -Message "Downloading MiKTeX installer from $downloadUrl ..." -LogWriter $LogWriter
+        $invokeParameters = @{
+            Uri     = $downloadUrl
+            OutFile = $destination
+        }
+        $command = Get-Command -Name Invoke-WebRequest
+        if ($command.Parameters.ContainsKey('UseBasicParsing')) {
+            $invokeParameters['UseBasicParsing'] = $true
+        }
+        Invoke-WebRequest @invokeParameters
+    } else {
+        Write-LabLog -Message 'Using cached MiKTeX installer payload.' -LogWriter $LogWriter
+    }
+
+    $argumentConfig = Get-OptionalPropertyValue -InputObject $installerConfig -PropertyName 'arguments'
+    $argumentList = @()
+    if ($argumentConfig -is [System.Collections.IEnumerable] -and -not ($argumentConfig -is [string])) {
+        $argumentList = @($argumentConfig | ForEach-Object { $_ })
+    } elseif ($argumentConfig) {
+        $argumentList = @($argumentConfig)
+    }
+    if (-not $argumentList -or $argumentList.Count -eq 0) {
+        $argumentList = @('--unattended', '--shared', '--package-set=basic')
+    }
+
+    Write-LabLog -Message 'Running MiKTeX installer in unattended mode...' -LogWriter $LogWriter
+    $process = Start-Process -FilePath $destination -ArgumentList $argumentList -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        throw "MiKTeX installer exited with code $($process.ExitCode)."
+    }
+
+    return $true
+}
+
 function Install-LabPackages {
     param(
         [Parameter(Mandatory)]
@@ -758,6 +821,14 @@ function Set-MikTexConfiguration {
         if ($miktexPackage) {
             Write-LabLog -Message "MiKTeX utilities not found; attempting winget install for $miktexPackageId ..." -LogWriter $LogWriter
             Install-WingetPackage -Package $miktexPackage -LogWriter $LogWriter
+            $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
+            $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
+        }
+    }
+
+    if (-not $initexmf -or -not $mpmExe) {
+        $installedWithBootstrap = Install-MikTexFromInstaller -Config $Config -TexConfig $Config.tex -LogWriter $LogWriter
+        if ($installedWithBootstrap) {
             $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
             $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
         }
