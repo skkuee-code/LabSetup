@@ -3,6 +3,16 @@
 param(
     [string]$SourcePath = (Split-Path -Path $PSScriptRoot -Parent),
     [string]$DestinationPath = 'C:\ProgramData\LabSetup',
+    [string[]]$ExcludeDirectories = @('.git', '.github', 'cache', 'logs', 'Documents and Settings'),
+    [string[]]$ExcludeFiles = @(
+        'NTUSER.DAT',
+        'NTUSER.DAT.LOG1',
+        'NTUSER.DAT.LOG2',
+        'NTUSER.INI',
+        'UsrClass.dat',
+        'UsrClass.dat.LOG1',
+        'UsrClass.dat.LOG2'
+    ),
     [switch]$Mirror,
     [switch]$SkipAcl
 )
@@ -15,7 +25,12 @@ Import-Module -Name $commonModule -Force
 
 Confirm-LabAdministrator
 
-$resolvedSource = Resolve-Path -Path $SourcePath
+$resolvedSource = (Resolve-Path -Path $SourcePath).ProviderPath
+$userProfile = [Environment]::GetFolderPath('UserProfile')
+if ($resolvedSource -ieq $userProfile) {
+    throw 'The SourcePath resolved to the entire user profile. Specify the LabSetup directory explicitly (e.g. C:\Users\<user>\Documents\LabSetup).'
+}
+
 Write-Host "Deploying LabSetup from $resolvedSource to $DestinationPath ..." -ForegroundColor Cyan
 
 if (-not (Test-Path -LiteralPath $DestinationPath -PathType Container)) {
@@ -34,16 +49,29 @@ $robocopyArgs = @(
     '/NJH',
     '/NJS',
     '/NP',
-    '/XD', '.git', '.github', 'cache', 'logs'
+    '/XJ'
 )
 
 if ($Mirror) {
     $robocopyArgs += '/MIR'
 }
 
-$robocopy = Start-Process -FilePath 'robocopy.exe' -ArgumentList $robocopyArgs -Wait -PassThru
-if ($robocopy.ExitCode -gt 7) {
-    throw "robocopy failed with exit code $($robocopy.ExitCode)."
+$normalizedExcludeDirs = @($ExcludeDirectories | Where-Object { $_ })
+if ($normalizedExcludeDirs.Count -gt 0) {
+    $robocopyArgs += '/XD'
+    $robocopyArgs += $normalizedExcludeDirs
+}
+
+$normalizedExcludeFiles = @($ExcludeFiles | Where-Object { $_ })
+if ($normalizedExcludeFiles.Count -gt 0) {
+    $robocopyArgs += '/XF'
+    $robocopyArgs += $normalizedExcludeFiles
+}
+
+$null = & 'robocopy.exe' @robocopyArgs
+$exitCode = $LASTEXITCODE
+if ($exitCode -gt 7) {
+    throw "robocopy failed with exit code $exitCode."
 }
 
 if (-not $SkipAcl) {
