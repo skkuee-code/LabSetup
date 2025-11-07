@@ -23,6 +23,13 @@ function ConvertTo-Hashtable {
             }
             return $result
         }
+        { $_ -is [System.Management.Automation.PSObject] } {
+            $result = @{}
+            foreach ($property in $_.PSObject.Properties) {
+                $result[$property.Name] = ConvertTo-Hashtable -InputObject $property.Value
+            }
+            return $result
+        }
         { $_ -is [System.Collections.IEnumerable] -and -not ($_ -is [string]) } {
             $list = @()
             foreach ($item in $_) {
