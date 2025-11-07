@@ -25,10 +25,19 @@ Import-Module -Name $commonModule -Force
 
 Confirm-LabAdministrator
 
+$repositoryRoot = Split-Path -Path $PSScriptRoot -Parent
+$resolvedRepositoryRoot = (Resolve-Path -Path $repositoryRoot).ProviderPath
 $resolvedSource = (Resolve-Path -Path $SourcePath).ProviderPath
 $userProfile = [Environment]::GetFolderPath('UserProfile')
 if ($resolvedSource -ieq $userProfile) {
-    throw 'The SourcePath resolved to the entire user profile. Specify the LabSetup directory explicitly (e.g. C:\Users\<user>\Documents\LabSetup).'
+    $repositoryIsUnderProfile = $resolvedRepositoryRoot.StartsWith($userProfile, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($repositoryIsUnderProfile -and $resolvedRepositoryRoot -ne $userProfile) {
+        Write-Warning "SourcePath resolved to the entire user profile. Using repository root $resolvedRepositoryRoot instead. Provide -SourcePath explicitly if you intended to mirror the profile."
+        $resolvedSource = $resolvedRepositoryRoot
+    }
+    else {
+        throw 'The SourcePath resolved to the entire user profile. Specify the LabSetup directory explicitly (e.g. C:\Users\<user>\Documents\LabSetup).'
+    }
 }
 
 Write-Host "Deploying LabSetup from $resolvedSource to $DestinationPath ..." -ForegroundColor Cyan
