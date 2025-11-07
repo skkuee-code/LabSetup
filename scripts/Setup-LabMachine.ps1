@@ -11,10 +11,21 @@ param(
 
 $scriptRoot = if (-not [string]::IsNullOrEmpty($PSScriptRoot)) {
     $PSScriptRoot
-} elseif ($MyInvocation?.MyCommand?.Path) {
-    Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 } else {
-    (Get-Location).ProviderPath
+    $invocationPath = $null
+
+    if ($null -ne $MyInvocation -and
+        $null -ne $MyInvocation.MyCommand -and
+        -not [string]::IsNullOrEmpty($MyInvocation.MyCommand.Path)) {
+        # Windows PowerShell 5.1 lacks null-conditional operators, so resolve the path explicitly.
+        $invocationPath = $MyInvocation.MyCommand.Path
+    }
+
+    if ($invocationPath) {
+        Split-Path -Path $invocationPath -Parent
+    } else {
+        (Get-Location).ProviderPath
+    }
 }
 
 $repoRoot = Split-Path -Path $scriptRoot -Parent
