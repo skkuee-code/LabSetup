@@ -63,6 +63,29 @@ function Get-OptionalPropertyValue {
     return $null
 }
 
+function Get-LabPackageById {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Config,
+        [Parameter(Mandatory)]
+        [string]$PackageId
+    )
+
+    if (-not $Config.wingetPackages) {
+        return $null
+    }
+
+    foreach ($package in $Config.wingetPackages) {
+        $currentId = Get-OptionalPropertyValue -InputObject $package -PropertyName 'id'
+        if ([string]::IsNullOrWhiteSpace($currentId)) { continue }
+        if ($currentId -eq $PackageId) {
+            return $package
+        }
+    }
+
+    return $null
+}
+
 function Get-LabSetupConfig {
     param(
         [Parameter(Mandatory)]
@@ -213,6 +236,47 @@ function Get-ShellItemFromAppId {
     }
 }
 
+function Get-StartMenuShortcutPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ShortcutName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ShortcutName)) {
+        return $null
+    }
+
+    $shortcutFile = if ($ShortcutName.EndsWith('.lnk')) {
+        $ShortcutName
+    } else {
+        "$ShortcutName.lnk"
+    }
+
+    $candidateRoots = @(
+        (Join-Path -Path $env:ProgramData -ChildPath 'Microsoft\Windows\Start Menu\Programs'),
+        (Join-Path -Path $env:ProgramData -ChildPath 'Microsoft\Windows\Start Menu'),
+        (Join-Path -Path $env:APPDATA -ChildPath 'Microsoft\Windows\Start Menu\Programs')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($root in $candidateRoots) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        try {
+            $shortcut = Get-ChildItem -Path $root -Filter $shortcutFile -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { -not $_.PSIsContainer } |
+                Select-Object -First 1
+        }
+        catch {
+            $shortcut = $null
+        }
+
+        if ($shortcut) {
+            return $shortcut.FullName
+        }
+    }
+
+    return $null
+}
+
 function Invoke-TaskbarVerb {
     param(
         [Parameter(Mandatory)]
@@ -280,7 +344,8 @@ function Set-TaskbarPin {
         [Parameter(Mandatory)]
         [hashtable]$Config,
         [string[]]$CandidatePaths = @(),
-        [string]$AppId
+        [string]$AppId,
+        [string]$ShortcutName
     )
 
     $retries = [int]($Config.taskbar.retryCount | ForEach-Object { $_ }) 
@@ -299,6 +364,17 @@ function Set-TaskbarPin {
 
         if (-not $shellItem -and $AppId) {
             $shellItem = Get-ShellItemFromAppId -AppId $AppId
+        }
+
+        if (-not $ShortcutName) {
+            $ShortcutName = $DisplayName
+        }
+
+        if (-not $shellItem) {
+            $shortcutPath = Get-StartMenuShortcutPath -ShortcutName $ShortcutName
+            if ($shortcutPath) {
+                $shellItem = Get-ShellItemFromPath -Path $shortcutPath
+            }
         }
 
         if (-not $shellItem) {
@@ -498,7 +574,9 @@ function Set-LabTaskbarPins {
             $appId = $package['appUserModelId']
         }
 
-        Set-TaskbarPin -DisplayName $package.displayName -Config $Config -CandidatePaths $candidatePaths -AppId $appId | Out-Null
+        $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
+
+        Set-TaskbarPin -DisplayName $package.displayName -Config $Config -CandidatePaths $candidatePaths -AppId $appId -ShortcutName $shortcutName | Out-Null
     }
 }
 
@@ -557,14 +635,25 @@ function Set-UvToolchain {
 
     if (-not $Config.uv) { return }
 
-    $uvExe = Resolve-ExecutableFromCandidates -Candidates @(
+    $uvCandidates = @(
         (Join-Path -Path ${env:ProgramFiles} -ChildPath 'uv\uv.exe'),
         (Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'uv\uv.exe'),
         'uv'
     )
+    $uvExe = Resolve-ExecutableFromCandidates -Candidates $uvCandidates
     if (-not $uvExe) {
-        Write-LabLog -Message 'uv executable not found; skipping uv setup.' -LogWriter $LogWriter
-        return
+        $uvPackageId = Get-OptionalPropertyValue -InputObject $Config.uv -PropertyName 'packageId'
+        if (-not $uvPackageId) { $uvPackageId = 'Astral.Uv' }
+        $uvPackage = Get-LabPackageById -Config $Config -PackageId $uvPackageId
+        if ($uvPackage) {
+            Write-LabLog -Message "uv executable not found; attempting winget install for $uvPackageId ..." -LogWriter $LogWriter
+            Install-WingetPackage -Package $uvPackage -LogWriter $LogWriter
+            $uvExe = Resolve-ExecutableFromCandidates -Candidates $uvCandidates
+        }
+    }
+    if (-not $uvExe) {
+        Write-LabLog -Message 'uv executable not found; aborting uv setup.' -LogWriter $LogWriter
+        throw 'uv executable not found after installation attempt.'
     }
 
     $uvHome = Join-Path -Path $Config.programDataPath -ChildPath 'uv'
@@ -615,20 +704,39 @@ function Set-MikTexConfiguration {
 
     if (-not $Config.tex) { return }
 
-    $initexmf = Resolve-ExecutableFromCandidates -Candidates @(
-        (Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe'),
-        (Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe'),
+    $initexmfCandidates = @(
+        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe' }),
+        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\initexmf.exe' }),
+        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe' }),
+        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\initexmf.exe' }),
         'initexmf'
-    )
-    $mpmExe = Resolve-ExecutableFromCandidates -Candidates @(
-        (Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe'),
-        (Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe'),
+    ) | Where-Object { $_ }
+    $mpmCandidates = @(
+        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe' }),
+        (if ($env:ProgramFiles) { Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\mpm.exe' }),
+        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\mpm.exe' }),
+        (if (${env:ProgramFiles(x86)}) { Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\mpm.exe' }),
         'mpm'
-    )
+    ) | Where-Object { $_ }
+
+    $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
+    $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
 
     if (-not $initexmf -or -not $mpmExe) {
-        Write-LabLog -Message 'MiKTeX utilities not found; skipping TeX post-configuration.' -LogWriter $LogWriter
-        return
+        $miktexPackageId = Get-OptionalPropertyValue -InputObject $Config.tex -PropertyName 'packageId'
+        if (-not $miktexPackageId) { $miktexPackageId = 'MiKTeX.MiKTeX' }
+        $miktexPackage = Get-LabPackageById -Config $Config -PackageId $miktexPackageId
+        if ($miktexPackage) {
+            Write-LabLog -Message "MiKTeX utilities not found; attempting winget install for $miktexPackageId ..." -LogWriter $LogWriter
+            Install-WingetPackage -Package $miktexPackage -LogWriter $LogWriter
+            $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
+            $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
+        }
+    }
+
+    if (-not $initexmf -or -not $mpmExe) {
+        Write-LabLog -Message 'MiKTeX utilities not found after installation attempt.' -LogWriter $LogWriter
+        throw 'MiKTeX utilities not found.'
     }
 
     if ($Config.tex.autoInstallMissingPackages) {
