@@ -36,7 +36,7 @@ $shell = New-Object -ComObject WScript.Shell
 try {
     $shortcut = $shell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = 'powershell.exe'
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`""
+    $shortcut.Arguments = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$targetScript`""
     $shortcut.WorkingDirectory = $config.programDataPath
     $shortcut.IconLocation = 'powershell.exe,0'
     $shortcut.Description = 'Provision shared lab workstation software and toolchains.'
