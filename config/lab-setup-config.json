@@ -1,0 +1,111 @@
+{
+    "programDataPath": "C:\\ProgramData\\LabSetup",
+    "publicDesktopShortcutName": "Lab Setup.lnk",
+    "setupScriptPath": "scripts\\Setup-LabMachine.ps1",
+    "wingetPackages": [
+        {
+            "id": "SlackTechnologies.Slack",
+            "displayName": "Slack",
+            "silent": true,
+            "pinToTaskbar": true,
+            "taskbarTargets": [
+                "C:\\Program Files\\Slack\\slack.exe",
+                "C:\\Program Files (x86)\\Slack\\slack.exe"
+            ]
+        },
+        {
+            "id": "Microsoft.VisualStudioCode",
+            "displayName": "Visual Studio Code",
+            "silent": true,
+            "pinToTaskbar": true,
+            "taskbarTargets": [
+                "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+            ]
+        },
+        {
+            "id": "Google.Chrome",
+            "displayName": "Google Chrome",
+            "silent": true,
+            "pinToTaskbar": true,
+            "taskbarTargets": [
+                "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+            ]
+        },
+        {
+            "id": "AnalogDevices.LTspice",
+            "displayName": "LTspice",
+            "silent": true,
+            "pinToTaskbar": true,
+            "taskbarTargets": [
+                "C:\\Program Files\\ADI\\LTspice\\LTspice.exe",
+                "C:\\Program Files\\LTC\\LTspiceXVII\\XVIIx64.exe"
+            ]
+        },
+        {
+            "id": "LayoutEditor",
+            "displayName": "LayoutEditor",
+            "silent": false,
+            "pinToTaskbar": true,
+            "taskbarTargets": [
+                "C:\\Program Files\\LayoutEditor\\layouteditor.exe"
+            ],
+            "installer": {
+                "type": "msi",
+                "downloadUrl": "https://www.layouteditor.net/download/layout-20250528-win-64bit-installer.msi",
+                "expectedFileName": "layout-20250528-win-64bit-installer.msi"
+            }
+        },
+        {
+            "id": "Astral.Uv",
+            "displayName": "uv",
+            "silent": true
+        },
+        {
+            "id": "Volta.Volta",
+            "displayName": "Volta",
+            "silent": true
+        },
+        {
+            "id": "Git.Git",
+            "displayName": "Git",
+            "silent": true
+        },
+        {
+            "id": "GitHub.GitLFS",
+            "displayName": "Git LFS",
+            "silent": true
+        },
+        {
+            "id": "Posit.Quarto",
+            "displayName": "Quarto",
+            "silent": true
+        },
+        {
+            "id": "MiKTeX.MiKTeX",
+            "displayName": "MiKTeX",
+            "silent": false
+        }
+    ],
+    "volta": {
+        "nodeVersion": "lts",
+        "globalPackages": [
+            "typescript"
+        ]
+    },
+    "uv": {
+        "pythonVersions": [
+            "3.12"
+        ]
+    },
+    "git": {
+        "configureLfs": true
+    },
+    "tex": {
+        "autoInstallMissingPackages": true,
+        "refreshFileDatabase": true
+    },
+    "taskbar": {
+        "retryCount": 3,
+        "retryDelaySeconds": 10
+    }
+}

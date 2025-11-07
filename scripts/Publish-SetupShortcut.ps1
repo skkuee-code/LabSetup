@@ -1,0 +1,49 @@
+#Requires -RunAsAdministrator
+[CmdletBinding()]
+param(
+    [string]$ConfigPath = (Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'config\lab-setup-config.json'),
+    [string]$ShortcutName,
+    [string]$DesktopPath = 'C:\Users\Public\Desktop',
+    [switch]$Force
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$commonModule = Join-Path -Path $PSScriptRoot -ChildPath 'LabSetup.Common.psm1'
+Import-Module -Name $commonModule -Force
+
+Confirm-LabAdministrator
+
+$config = Get-LabSetupConfig -ConfigPath $ConfigPath
+$shortcutLabel = if ($ShortcutName) { $ShortcutName } elseif ($config.publicDesktopShortcutName) { $config.publicDesktopShortcutName } else { 'Lab Setup.lnk' }
+
+if (-not (Test-Path -LiteralPath $DesktopPath -PathType Container)) {
+    throw "Desktop path not found: $DesktopPath"
+}
+
+$targetScript = Join-Path -Path $config.programDataPath -ChildPath $config.setupScriptPath
+if (-not (Test-Path -LiteralPath $targetScript -PathType Leaf)) {
+    throw "Setup script not found at $targetScript. Deploy the repository first."
+}
+
+$shortcutPath = Join-Path -Path $DesktopPath -ChildPath $shortcutLabel
+if ((Test-Path -LiteralPath $shortcutPath) -and $Force) {
+    Remove-Item -LiteralPath $shortcutPath -Force
+}
+
+$shell = New-Object -ComObject WScript.Shell
+try {
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = 'powershell.exe'
+    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`""
+    $shortcut.WorkingDirectory = $config.programDataPath
+    $shortcut.IconLocation = 'powershell.exe,0'
+    $shortcut.Description = 'Provision shared lab workstation software and toolchains.'
+    $shortcut.Save()
+}
+finally {
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
+}
+
+Write-Host "Shortcut created at $shortcutPath" -ForegroundColor Green
