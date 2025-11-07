@@ -126,6 +126,51 @@ function Get-WingetExecutable {
     return $command.Source
 }
 
+function Join-LabCommandLineArguments {
+    param(
+        [string[]]$Arguments
+    )
+
+    if (-not $Arguments) {
+        return ''
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($argument in $Arguments) {
+        if ($null -eq $argument) {
+            continue
+        }
+
+        if ($builder.Length -gt 0) {
+            [void]$builder.Append(' ')
+        }
+
+        if ($argument.Length -eq 0) {
+            [void]$builder.Append('""')
+            continue
+        }
+
+        $needsQuotes = $false
+        foreach ($ch in $argument.ToCharArray()) {
+            if ([char]::IsWhiteSpace($ch) -or $ch -eq '"') {
+                $needsQuotes = $true
+                break
+            }
+        }
+
+        if (-not $needsQuotes) {
+            [void]$builder.Append($argument)
+            continue
+        }
+
+        $escaped = $argument -replace '(\\*)"', '$1$1\"'
+        $escaped = $escaped -replace '(\\+)$', '$1$1'
+        [void]$builder.Append('"').Append($escaped).Append('"')
+    }
+
+    return $builder.ToString()
+}
+
 function Show-LabProcessSpinner {
     param(
         [Parameter(Mandatory)]
@@ -229,15 +274,16 @@ function Invoke-Winget {
         $argumentsWithLogging += @('--log', $LogFilePath, '--verbose-logs')
     }
 
-    $startParams = @{
-        FilePath     = $winget
-        ArgumentList = $argumentsWithLogging
-        NoNewWindow  = $true
-        PassThru     = $true
-    }
+    $argumentLine = Join-LabCommandLineArguments -Arguments $argumentsWithLogging
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $winget
+    $startInfo.Arguments = $argumentLine
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WorkingDirectory = (Get-Location).ProviderPath
 
     try {
-        $process = Start-Process @startParams
+        $process = [System.Diagnostics.Process]::Start($startInfo)
     }
     catch {
         throw "Failed to start winget: $($_.Exception.Message)"
@@ -247,12 +293,19 @@ function Invoke-Winget {
         throw 'Failed to launch winget process.'
     }
 
-    if ($ShowSpinner -and -not [string]::IsNullOrWhiteSpace($ActivityMessage)) {
-        Show-LabProcessSpinner -Process $process -Activity $ActivityMessage
-    }
+    try {
+        if ($ShowSpinner -and -not [string]::IsNullOrWhiteSpace($ActivityMessage)) {
+            Show-LabProcessSpinner -Process $process -Activity $ActivityMessage
+        }
 
-    $process.WaitForExit()
-    $exitCode = $process.ExitCode
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+    }
+    finally {
+        if ($process) {
+            $process.Dispose()
+        }
+    }
 
     $effectiveAcceptableCodes = @()
     if ($AcceptableExitCodes) {
