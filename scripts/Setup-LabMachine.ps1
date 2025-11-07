@@ -44,7 +44,8 @@ Confirm-LabAdministrator
 
 $config = Get-LabSetupConfig -ConfigPath $ConfigPath
 $logPath = Get-LabLogPath -Config $config
-$logWriter = [System.IO.StreamWriter]::new($logPath, $true)
+$utf8WithBom = [System.Text.UTF8Encoding]::new($true) # Prevent Shift-JIS viewers from misreading log files.
+$logWriter = [System.IO.StreamWriter]::new($logPath, $true, $utf8WithBom)
 
 try {
     Write-LabLog -Message 'Starting lab machine provisioning.' -LogWriter $logWriter

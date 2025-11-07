@@ -90,13 +90,15 @@ function Invoke-Winget {
     param(
         [Parameter(Mandatory)]
         [string[]]$Arguments,
+        [int[]]$AcceptableExitCodes = @(),
         [switch]$IgnoreError
     )
 
     $winget = Get-WingetExecutable
     $output = & $winget @Arguments 2>&1
     $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0 -and -not $IgnoreError) {
+    $isAcceptable = ($exitCode -eq 0) -or ($AcceptableExitCodes -contains $exitCode)
+    if (-not $isAcceptable -and -not $IgnoreError) {
         throw "winget exited with code $exitCode.`n$($output | Out-String)"
     }
     return [pscustomobject]@{
@@ -355,10 +357,27 @@ function Install-WingetPackage {
         $wingetArgs += @('--override', $overrideArgs)
     }
 
+    $expectedExitCodes = @(
+        -1978335189, # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE
+        -1978335153, # APPINSTALLER_CLI_ERROR_UPGRADE_VERSION_NOT_NEWER
+        -1978335135  # APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED
+    )
+
     Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
-    $result = Invoke-Winget -Arguments $wingetArgs
-    if ($result.ExitCode -eq 0) {
-        Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
+    $result = Invoke-Winget -Arguments $wingetArgs -AcceptableExitCodes $expectedExitCodes
+    switch ($result.ExitCode) {
+        0 {
+            Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
+        }
+        -1978335189 {
+            Write-LabLog -Message "$displayName is already at the latest version; skipping." -LogWriter $LogWriter
+        }
+        -1978335153 {
+            Write-LabLog -Message "$displayName is newer than the requested version; leaving existing install in place." -LogWriter $LogWriter
+        }
+        -1978335135 {
+            Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
+        }
     }
 }
 
