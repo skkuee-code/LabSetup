@@ -337,17 +337,22 @@ function Install-ManualPackage {
         [System.IO.StreamWriter]$LogWriter
     )
 
-    $installer = $Package.installer
-    if (-not $installer) {
+    $installer = $Package['installer']
+    if (-not ($installer -is [System.Collections.IDictionary])) {
         throw "Manual package metadata missing installer section for $($Package.displayName)."
     }
 
-    $downloadUrl = $installer.downloadUrl
+    $downloadUrl = if ($installer.ContainsKey('downloadUrl')) { $installer['downloadUrl'] } else { $null }
     if (-not $downloadUrl) {
         throw "Missing download URL for $($Package.displayName)."
     }
 
-    $fileName = if ($installer.expectedFileName) { $installer.expectedFileName } else { Split-Path -Path $downloadUrl -Leaf }
+    $fileName = if ($installer.ContainsKey('expectedFileName') -and $installer['expectedFileName']) {
+        $installer['expectedFileName']
+    } else {
+        Split-Path -Path $downloadUrl -Leaf
+    }
+
     $cacheDir = Join-Path -Path $Config.programDataPath -ChildPath 'cache'
     New-LabDirectory -Path $cacheDir
     $destination = Join-Path -Path $cacheDir -ChildPath $fileName
@@ -367,7 +372,12 @@ function Install-ManualPackage {
         Write-LabLog -Message "Using cached installer for $($Package.displayName)." -LogWriter $LogWriter
     }
 
-    switch ($installer.type) {
+    $installerType = if ($installer.ContainsKey('type')) { $installer['type'] } else { $null }
+    if (-not $installerType) {
+        throw "Missing installer type for $($Package.displayName)."
+    }
+
+    switch ($installerType.ToLowerInvariant()) {
         'msi' {
             $msiExec = Join-Path -Path $env:SystemRoot -ChildPath 'System32\msiexec.exe'
             $msiArgs = @(
@@ -383,7 +393,7 @@ function Install-ManualPackage {
             }
         }
         default {
-            throw "Unsupported installer type '$($installer.type)' for $($Package.displayName)."
+            throw "Unsupported installer type '$installerType' for $($Package.displayName)."
         }
     }
 
@@ -398,7 +408,13 @@ function Install-LabPackages {
     )
 
     foreach ($package in $Config.wingetPackages) {
-        if ($package.installer) {
+        $hasInstallerMetadata = $false
+        if ($package -is [System.Collections.IDictionary] -and $package.ContainsKey('installer')) {
+            $installerMetadata = $package['installer']
+            $hasInstallerMetadata = $null -ne $installerMetadata
+        }
+
+        if ($hasInstallerMetadata) {
             Install-ManualPackage -Package $package -Config $Config -LogWriter $LogWriter
         } else {
             Install-WingetPackage -Package $package -LogWriter $LogWriter
@@ -413,14 +429,23 @@ function Set-LabTaskbarPins {
     )
 
     foreach ($package in $Config.wingetPackages) {
-        if (-not $package.pinToTaskbar) { continue }
-
-        $candidatePaths = @()
-        if ($package.taskbarTargets) {
-            $candidatePaths = @($package.taskbarTargets | ForEach-Object { $_ })
+        $pinToTaskbar = $false
+        if ($package -is [System.Collections.IDictionary] -and $package.ContainsKey('pinToTaskbar')) {
+            $pinToTaskbar = [bool]$package['pinToTaskbar']
         }
 
-        $appId = $package.appUserModelId
+        if (-not $pinToTaskbar) { continue }
+
+        $candidatePaths = @()
+        if ($package.ContainsKey('taskbarTargets') -and $package['taskbarTargets']) {
+            $candidatePaths = @($package['taskbarTargets'] | ForEach-Object { $_ })
+        }
+
+        $appId = $null
+        if ($package.ContainsKey('appUserModelId')) {
+            $appId = $package['appUserModelId']
+        }
+
         Set-TaskbarPin -DisplayName $package.displayName -Config $Config -CandidatePaths $candidatePaths -AppId $appId | Out-Null
     }
 }
