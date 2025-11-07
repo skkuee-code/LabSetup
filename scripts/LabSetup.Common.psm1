@@ -240,6 +240,12 @@ function Write-LabLog {
         $LogWriter.Flush()
     }
     Write-Host $line
+    try {
+        [System.Console]::Out.Flush()
+    }
+    catch {
+        # Hosts without an attached console (e.g. remoting) can ignore flush errors.
+    }
 }
 
 function Add-MachinePathEntry {
@@ -248,14 +254,51 @@ function Add-MachinePathEntry {
         [string]$Path
     )
 
-    $current = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $segments = $current -split ';' | Where-Object { $_ }
-    if ($segments -contains $Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) {
         return
     }
 
-    $newPath = ($segments + $Path) -join ';'
-    [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine')
+    $target = $Path.Trim()
+    $comparisonTarget = $target.TrimEnd('\')
+    $comparison = [System.StringComparison]::OrdinalIgnoreCase
+
+    $machineCurrent = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $machineSegments = @()
+    if ($machineCurrent) {
+        $machineSegments = $machineCurrent -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    }
+
+    $machineHasTarget = $false
+    foreach ($segment in $machineSegments) {
+        $normalizedSegment = $segment.Trim().TrimEnd('\')
+        if ($normalizedSegment.Equals($comparisonTarget, $comparison)) {
+            $machineHasTarget = $true
+            break
+        }
+    }
+
+    if (-not $machineHasTarget) {
+        $machineSegments = $machineSegments + $target
+        [Environment]::SetEnvironmentVariable('Path', ($machineSegments -join ';'), 'Machine')
+    }
+
+    $processSegments = @()
+    if ($env:Path) {
+        $processSegments = $env:Path -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    }
+
+    $processHasTarget = $false
+    foreach ($segment in $processSegments) {
+        $normalizedSegment = $segment.Trim().TrimEnd('\')
+        if ($normalizedSegment.Equals($comparisonTarget, $comparison)) {
+            $processHasTarget = $true
+            break
+        }
+    }
+
+    if (-not $processHasTarget) {
+        $env:Path = ($processSegments + $target) -join ';'
+    }
 }
 
 function Resolve-ExecutableFromCandidates {
@@ -363,6 +406,58 @@ function Get-StartMenuShortcutPath {
     return $null
 }
 
+function Get-LabTaskbarShellItems {
+    param(
+        [string[]]$CandidatePaths = @(),
+        [string]$AppId,
+        [string]$ShortcutName,
+        [string]$DisplayName
+    )
+
+    $items = New-Object System.Collections.Generic.List[object]
+    $resolvedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    if ($CandidatePaths) {
+        foreach ($candidate in $CandidatePaths) {
+            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+            $exe = Resolve-ExecutableFromCandidates -Candidates @($candidate)
+            if ($exe -and $resolvedPaths.Add($exe)) {
+                $item = Get-ShellItemFromPath -Path $exe
+                if ($item) {
+                    [void]$items.Add($item)
+                }
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AppId)) {
+        $appItem = Get-ShellItemFromAppId -AppId $AppId
+        if ($appItem) {
+            [void]$items.Add($appItem)
+        }
+    }
+
+    $shortcutNames = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($ShortcutName)) {
+        [void]$shortcutNames.Add($ShortcutName)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($DisplayName) -and -not $shortcutNames.Contains($DisplayName)) {
+        [void]$shortcutNames.Add($DisplayName)
+    }
+
+    foreach ($name in $shortcutNames) {
+        $shortcutPath = Get-StartMenuShortcutPath -ShortcutName $name
+        if ($shortcutPath -and $resolvedPaths.Add($shortcutPath)) {
+            $item = Get-ShellItemFromPath -Path $shortcutPath
+            if ($item) {
+                [void]$items.Add($item)
+            }
+        }
+    }
+
+    return $items.ToArray()
+}
+
 function Invoke-TaskbarVerb {
     param(
         [Parameter(Mandatory)]
@@ -370,6 +465,9 @@ function Invoke-TaskbarVerb {
         [Parameter(Mandatory)]
         [string]$VerbName
     )
+
+    $pinLabels = @('Pin to taskbar', 'タスク バーにピン留めする', 'タスクバーにピン留めする')
+    $unpinLabels = @('Unpin from taskbar', 'タスク バーからピン留めを外す', 'タスクバーからピン留めを外す')
 
     foreach ($verb in $ShellItem.Verbs()) {
         $canonicalProperty = $verb.PSObject.Properties['CanonicalName']
@@ -381,17 +479,22 @@ function Invoke-TaskbarVerb {
         $nameProperty = $verb.PSObject.Properties['Name']
         $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
         $normalized = ($verbName -replace '&', '').Trim()
+        $normalizedLower = $normalized.ToLowerInvariant()
         switch ($VerbName) {
             'taskbarpin' {
-                if ($normalized -match 'Pin to taskbar' -or $normalized -match 'タスク バーにピン留め') {
-                    $verb.DoIt()
-                    return $true
+                foreach ($label in $pinLabels) {
+                    if ($normalizedLower -eq $label.ToLowerInvariant()) {
+                        $verb.DoIt()
+                        return $true
+                    }
                 }
             }
             'taskbarunpin' {
-                if ($normalized -match 'Unpin from taskbar' -or $normalized -match 'タスク バーからピン留めを外す') {
-                    $verb.DoIt()
-                    return $true
+                foreach ($label in $unpinLabels) {
+                    if ($normalizedLower -eq $label.ToLowerInvariant()) {
+                        $verb.DoIt()
+                        return $true
+                    }
                 }
             }
         }
@@ -406,6 +509,8 @@ function Test-TaskbarPinned {
         $ShellItem
     )
 
+    $unpinLabels = @('Unpin from taskbar', 'タスク バーからピン留めを外す', 'タスクバーからピン留めを外す')
+
     foreach ($verb in $ShellItem.Verbs()) {
         $canonicalProperty = $verb.PSObject.Properties['CanonicalName']
         $canonicalName = if ($canonicalProperty) { $canonicalProperty.Value } else { $null }
@@ -415,8 +520,11 @@ function Test-TaskbarPinned {
         $nameProperty = $verb.PSObject.Properties['Name']
         $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
         $normalized = ($verbName -replace '&', '').Trim()
-        if ($normalized -match 'Unpin from taskbar' -or $normalized -match 'タスク バーからピン留めを外す') {
-            return $true
+        $normalizedLower = $normalized.ToLowerInvariant()
+        foreach ($label in $unpinLabels) {
+            if ($normalizedLower -eq $label.ToLowerInvariant()) {
+                return $true
+            }
         }
     }
 
@@ -431,7 +539,8 @@ function Set-TaskbarPin {
         [hashtable]$Config,
         [string[]]$CandidatePaths = @(),
         [string]$AppId,
-        [string]$ShortcutName
+        [string]$ShortcutName,
+        [System.IO.StreamWriter]$LogWriter
     )
 
     $retries = [int]($Config.taskbar.retryCount | ForEach-Object { $_ }) 
@@ -439,50 +548,63 @@ function Set-TaskbarPin {
     $delay = [int]($Config.taskbar.retryDelaySeconds | ForEach-Object { $_ })
     if ($delay -lt 1) { $delay = 5 }
 
+    if ($LogWriter) {
+        Write-LabLog -Message "Pinning $DisplayName to the taskbar..." -LogWriter $LogWriter
+    }
+
     for ($attempt = 1; $attempt -le $retries; $attempt++) {
-        $shellItem = $null
-        if ($CandidatePaths.Count -gt 0) {
-            $exe = Resolve-ExecutableFromCandidates -Candidates $CandidatePaths
-            if ($exe) {
-                $shellItem = Get-ShellItemFromPath -Path $exe
+        $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
+        if (-not $shellItems -or $shellItems.Count -eq 0) {
+            if ($attempt -lt $retries) {
+                if ($LogWriter) {
+                    Write-LabLog -Message "Unable to locate a taskbar target for $DisplayName (attempt $attempt of $retries); retrying in $delay seconds." -LogWriter $LogWriter
+                }
+                Start-Sleep -Seconds $delay
+                continue
+            }
+            break
+        }
+
+        $pinned = $false
+        foreach ($shellItem in $shellItems) {
+            try {
+                if (Test-TaskbarPinned -ShellItem $shellItem) {
+                    $pinned = $true
+                    break
+                }
+
+                if (Invoke-TaskbarVerb -ShellItem $shellItem -VerbName 'taskbarpin') {
+                    Start-Sleep -Seconds 1
+                    if (Test-TaskbarPinned -ShellItem $shellItem) {
+                        $pinned = $true
+                        break
+                    }
+                }
+            }
+            finally {
+                if ($shellItem -is [__ComObject]) {
+                    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shellItem)
+                }
             }
         }
-
-        if (-not $shellItem -and $AppId) {
-            $shellItem = Get-ShellItemFromAppId -AppId $AppId
-        }
-
-        if (-not $ShortcutName) {
-            $ShortcutName = $DisplayName
-        }
-
-        if (-not $shellItem) {
-            $shortcutPath = Get-StartMenuShortcutPath -ShortcutName $ShortcutName
-            if ($shortcutPath) {
-                $shellItem = Get-ShellItemFromPath -Path $shortcutPath
+        if ($pinned) {
+            if ($LogWriter) {
+                Write-LabLog -Message "Pinned $DisplayName to the taskbar." -LogWriter $LogWriter
             }
-        }
-
-        if (-not $shellItem) {
-            Start-Sleep -Seconds $delay
-            continue
-        }
-
-        if (Test-TaskbarPinned -ShellItem $shellItem) {
             return $true
         }
 
-        if (Invoke-TaskbarVerb -ShellItem $shellItem -VerbName 'taskbarpin') {
-            Start-Sleep -Seconds 1
-            if (Test-TaskbarPinned -ShellItem $shellItem) {
-                return $true
-            }
+        if ($attempt -lt $retries) {
+            Start-Sleep -Seconds $delay
         }
-
-        Start-Sleep -Seconds $delay
     }
 
-    Write-Warning "Failed to pin $DisplayName to the taskbar."
+    $message = "Failed to pin $DisplayName to the taskbar."
+    if ($LogWriter) {
+        Write-LabLog -Message $message -LogWriter $LogWriter
+    } else {
+        Write-Warning $message
+    }
     return $false
 }
 
@@ -791,7 +913,8 @@ function Install-LabPackages {
 function Set-LabTaskbarPins {
     param(
         [Parameter(Mandatory)]
-        [hashtable]$Config
+        [hashtable]$Config,
+        [System.IO.StreamWriter]$LogWriter
     )
 
     foreach ($package in $Config.wingetPackages) {
@@ -814,7 +937,7 @@ function Set-LabTaskbarPins {
 
         $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
 
-        Set-TaskbarPin -DisplayName $package.displayName -Config $Config -CandidatePaths $candidatePaths -AppId $appId -ShortcutName $shortcutName | Out-Null
+        Set-TaskbarPin -DisplayName $package.displayName -Config $Config -CandidatePaths $candidatePaths -AppId $appId -ShortcutName $shortcutName -LogWriter $LogWriter | Out-Null
     }
 }
 
@@ -908,14 +1031,20 @@ function Set-UvToolchain {
     New-LabDirectory -Path $uvBin
     Add-MachinePathEntry -Path $uvBin
     [Environment]::SetEnvironmentVariable('UV_HOME', $uvHome, 'Machine')
+    $env:UV_HOME = $uvHome
     $uvPythonRoot = Join-Path -Path $uvHome -ChildPath 'python'
     New-LabDirectory -Path $uvPythonRoot
     [Environment]::SetEnvironmentVariable('UV_PYTHON_INSTALL_DIR', $uvPythonRoot, 'Machine')
+    $env:UV_PYTHON_INSTALL_DIR = $uvPythonRoot
+    [Environment]::SetEnvironmentVariable('UV_PYTHON_BIN_DIR', $uvBin, 'Machine')
+    $env:UV_PYTHON_BIN_DIR = $uvBin
+    [Environment]::SetEnvironmentVariable('UV_PYTHON_INSTALL_BIN', '1', 'Machine')
+    $env:UV_PYTHON_INSTALL_BIN = '1'
 
     if ($Config.uv.pythonVersions) {
         foreach ($version in $Config.uv.pythonVersions) {
             Write-LabLog -Message "Installing Python $version via uv..." -LogWriter $LogWriter
-            & $uvExe 'python' 'install' $version | Out-Null
+            & $uvExe 'python' 'install' $version '--install-dir' $uvPythonRoot | Out-Null
             if ($LASTEXITCODE -ne 0) {
                 throw "uv failed to install Python $version."
             }

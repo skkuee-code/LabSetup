@@ -90,7 +90,7 @@ try {
     }
 
     if (-not $SkipTaskbarPins) {
-        Set-LabTaskbarPins -Config $config
+        Set-LabTaskbarPins -Config $config -LogWriter $logWriter
     } else {
         Write-LabLog -Message 'Skipping taskbar pinning (requested).' -LogWriter $logWriter
     }
