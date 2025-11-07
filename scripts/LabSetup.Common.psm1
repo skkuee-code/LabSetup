@@ -518,8 +518,6 @@ function Install-WingetPackage {
     if ([string]::IsNullOrWhiteSpace($scope)) {
         $scope = 'machine'
     }
-    $baseArgs += @('--scope', $scope)
-
     $declaredVersion = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'version'
     if ($declaredVersion) {
         $baseArgs += @('--version', $declaredVersion)
@@ -530,10 +528,33 @@ function Install-WingetPackage {
         $baseArgs += @('--override', $overrideArgs)
     }
 
+    $scopeCandidates = @()
+    $requestedScope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
+    if ($requestedScope -is [System.Collections.IEnumerable] -and -not ($requestedScope -is [string])) {
+        foreach ($scopeValue in $requestedScope) {
+            if (-not [string]::IsNullOrWhiteSpace($scopeValue)) {
+                $scopeCandidates += $scopeValue.ToLowerInvariant()
+            }
+        }
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($requestedScope)) {
+        $scopeCandidates += $requestedScope.ToLowerInvariant()
+    }
+
+    if (-not $scopeCandidates -or $scopeCandidates.Count -eq 0) {
+        $scopeCandidates = @('machine')
+    }
+    elseif (($scopeCandidates -contains 'user') -and -not ($scopeCandidates -contains 'machine')) {
+        # Favor per-user installs when requested, but fail over to machine installers if user scope is unavailable.
+        $scopeCandidates += 'machine'
+    }
+    $scopeCandidates = @($scopeCandidates | Select-Object -Unique)
+
     $expectedExitCodes = @(
         $script:WingetExitCodes.UpdateNotApplicable,
         $script:WingetExitCodes.UpgradeVersionNotNewer,
-        $script:WingetExitCodes.PackageAlreadyInstalled
+        $script:WingetExitCodes.PackageAlreadyInstalled,
+        $script:WingetExitCodes.NoApplicableInstaller
     )
 
     $silentFlag = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent')
@@ -553,42 +574,56 @@ function Install-WingetPackage {
 
     Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
 
-    :InstallAttempt foreach ($attempt in $installAttempts) {
-        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
-        $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
-        $arguments = @($baseArgs + $attempt.ExtraArgs)
-        $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath
-
-        switch ($result.ExitCode) {
-            0 {
-                Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
-                return
-            }
-            $script:WingetExitCodes.UpdateNotApplicable {
-                Write-LabLog -Message "$displayName is already at the latest version; skipping." -LogWriter $LogWriter
-                return
-            }
-            $script:WingetExitCodes.UpgradeVersionNotNewer {
-                Write-LabLog -Message "$displayName is newer than the requested version; leaving existing install in place." -LogWriter $LogWriter
-                return
-            }
-            $script:WingetExitCodes.PackageAlreadyInstalled {
-                Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
-                return
-            }
-            $script:WingetExitCodes.NoApplicableInstaller {
-                if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
-                    Write-LabLog -Message "$displayName does not provide silent install metadata; retrying with interactive mode." -LogWriter $LogWriter
-                    continue InstallAttempt
-                }
-            }
+    :ScopeAttempt for ($scopeIndex = 0; $scopeIndex -lt $scopeCandidates.Count; $scopeIndex++) {
+        $currentScope = $scopeCandidates[$scopeIndex]
+        $scopeArgs = @('--scope', $currentScope)
+        if ($scopeCandidates.Count -gt 1) {
+            Write-LabLog -Message "Attempting $displayName install with scope '$currentScope'." -LogWriter $LogWriter
         }
 
-        $message = "winget failed to install $displayName (exit code $($result.ExitCode)). Review $($result.LogPath) for details."
-        throw $message
+        :InstallAttempt foreach ($attempt in $installAttempts) {
+            $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
+            $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
+            $arguments = @($baseArgs + $scopeArgs + $attempt.ExtraArgs)
+            $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath
+
+            switch ($result.ExitCode) {
+                0 {
+                    Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.UpdateNotApplicable {
+                    Write-LabLog -Message "$displayName is already at the latest version; skipping." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.UpgradeVersionNotNewer {
+                    Write-LabLog -Message "$displayName is newer than the requested version; leaving existing install in place." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.PackageAlreadyInstalled {
+                    Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.NoApplicableInstaller {
+                    if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
+                        Write-LabLog -Message "$displayName does not provide silent install metadata; retrying with interactive mode." -LogWriter $LogWriter
+                        continue InstallAttempt
+                    }
+
+                    if ($scopeIndex -lt ($scopeCandidates.Count - 1)) {
+                        $nextScope = $scopeCandidates[$scopeIndex + 1]
+                        Write-LabLog -Message "$displayName does not offer an installer for scope '$currentScope'; retrying with scope '$nextScope'." -LogWriter $LogWriter
+                        continue ScopeAttempt
+                    }
+                }
+            }
+
+            $message = "winget failed to install $displayName (exit code $($result.ExitCode)). Review $($result.LogPath) for details."
+            throw $message
+        }
     }
 
-    throw "winget failed to install $displayName after exhausting available install modes."
+    throw "winget failed to install $displayName after exhausting available scopes and install modes."
 }
 
 function Install-ManualPackage {
