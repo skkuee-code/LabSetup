@@ -50,12 +50,15 @@
             "silent": false,
             "pinToTaskbar": true,
             "taskbarTargets": [
-                "C:\\Program Files\\LayoutEditor\\layouteditor.exe"
+                "C:\\Program Files\\LayoutEditor\\layouteditor.exe",
+                "C:\\Program Files (x86)\\LayoutEditor\\layouteditor.exe"
             ],
             "installer": {
                 "type": "msi",
                 "downloadUrl": "https://www.layouteditor.net/releases/20250528/layout-20250528-win-64bit-installer.msi",
-                "expectedFileName": "layout-20250528-win-64bit-installer.msi"
+                "expectedFileName": "layout-20250528-win-64bit-installer.msi",
+                "productCode": "{AF905B29-C486-46A5-A245-A4E78E83E0EF}",
+                "minimumVersion": "20.2.2"
             }
         },
         {

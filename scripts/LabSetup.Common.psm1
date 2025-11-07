@@ -126,6 +126,62 @@ function Get-WingetExecutable {
     return $command.Source
 }
 
+function Get-MsiProductInstallInfo {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProductCode
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ProductCode)) {
+        return $null
+    }
+
+    $code = $ProductCode.Trim()
+    if ($code.StartsWith('{') -and $code.EndsWith('}')) {
+        $code = $code
+    } else {
+        $trimmed = $code.Trim('{}')
+        $code = '{{0}}' -f $trimmed
+    }
+    $code = $code.ToUpperInvariant()
+
+    $candidateKeys = @(
+        "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\$code",
+        "HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\$code"
+    )
+
+    foreach ($keyPath in $candidateKeys) {
+        if (-not (Test-Path -LiteralPath $keyPath)) {
+            continue
+        }
+
+        try {
+            $values = Get-ItemProperty -LiteralPath $keyPath
+        }
+        catch {
+            continue
+        }
+
+        $info = @{
+            ProductCode     = $code
+            RegistryPath    = $keyPath
+            DisplayName     = Get-OptionalPropertyValue -InputObject $values -PropertyName 'DisplayName'
+            DisplayVersion  = Get-OptionalPropertyValue -InputObject $values -PropertyName 'DisplayVersion'
+            InstallLocation = Get-OptionalPropertyValue -InputObject $values -PropertyName 'InstallLocation'
+        }
+
+        $parsedVersion = $null
+        $versionText = $info.DisplayVersion
+        if ($versionText -and [System.Version]::TryParse($versionText, [ref]$parsedVersion)) {
+            $info['ParsedVersion'] = $parsedVersion
+        }
+
+        return $info
+    }
+
+    return $null
+}
+
 function Join-LabCommandLineArguments {
     param(
         [string[]]$Arguments
@@ -974,6 +1030,41 @@ function Install-ManualPackage {
     $installer = $Package['installer']
     if (-not ($installer -is [System.Collections.IDictionary])) {
         throw "Manual package metadata missing installer section for $($Package.displayName)."
+    }
+
+    $displayName = if ($Package.displayName) { $Package.displayName } elseif ($Package.id) { $Package.id } else { 'manual package' }
+    $productCode = Get-OptionalPropertyValue -InputObject $installer -PropertyName 'productCode'
+    $minimumVersionString = Get-OptionalPropertyValue -InputObject $installer -PropertyName 'minimumVersion'
+    $minimumVersion = $null
+    if ($minimumVersionString) {
+        $parsedMinimum = $null
+        if ([System.Version]::TryParse($minimumVersionString, [ref]$parsedMinimum)) {
+            $minimumVersion = $parsedMinimum
+        } else {
+            Write-LabLog -Message "Unable to parse minimum version '$minimumVersionString' for $displayName; proceeding without version comparison." -LogWriter $LogWriter
+        }
+    }
+
+    if ($productCode) {
+        $installInfo = Get-MsiProductInstallInfo -ProductCode $productCode
+        if ($installInfo) {
+            $installedVersionText = if ($installInfo.DisplayVersion) { $installInfo.DisplayVersion } else { 'unknown version' }
+            if ($minimumVersion -and $installInfo.ParsedVersion) {
+                if ($installInfo.ParsedVersion -lt $minimumVersion) {
+                    Write-LabLog -Message "$displayName $installedVersionText detected but older than required version $minimumVersionString; reinstalling." -LogWriter $LogWriter
+                } else {
+                    Write-LabLog -Message "$displayName already installed (product code $($installInfo.ProductCode), version $installedVersionText); skipping manual install." -LogWriter $LogWriter
+                    return
+                }
+            }
+            elseif ($minimumVersion -and -not $installInfo.ParsedVersion) {
+                Write-LabLog -Message "$displayName installation detected but version information is unavailable; reinstalling to ensure compliance." -LogWriter $LogWriter
+            }
+            else {
+                Write-LabLog -Message "$displayName already installed (product code $($installInfo.ProductCode)); skipping manual install." -LogWriter $LogWriter
+                return
+            }
+        }
     }
 
     $downloadUrl = if ($installer.ContainsKey('downloadUrl')) { $installer['downloadUrl'] } else { $null }
