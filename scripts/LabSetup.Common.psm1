@@ -266,16 +266,17 @@ function Resolve-ExecutableFromCandidates {
 
     foreach ($candidate in $Candidates) {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $expandedCandidate = [Environment]::ExpandEnvironmentVariables($candidate)
         try {
-            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-                return (Resolve-Path -LiteralPath $candidate).Path
+            if (Test-Path -LiteralPath $expandedCandidate -PathType Leaf) {
+                return (Resolve-Path -LiteralPath $expandedCandidate).Path
             }
         }
         catch {
             # Ignore and fall back to command resolution
         }
 
-        $command = Get-Command -Name $candidate -ErrorAction SilentlyContinue
+        $command = Get-Command -Name $expandedCandidate -ErrorAction SilentlyContinue
         if ($command -and $command.Source) {
             return $command.Source
         }

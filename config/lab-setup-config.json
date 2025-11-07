@@ -35,9 +35,11 @@
         {
             "id": "AnalogDevices.LTspice",
             "displayName": "LTspice",
+            "scope": "user",
             "silent": true,
             "pinToTaskbar": true,
             "taskbarTargets": [
+                "%LOCALAPPDATA%\\Programs\\ADI\\LTspice\\LTspice.exe",
                 "C:\\Program Files\\ADI\\LTspice\\LTspice.exe",
                 "C:\\Program Files\\LTC\\LTspiceXVII\\XVIIx64.exe"
             ]
