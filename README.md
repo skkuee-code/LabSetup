@@ -1,150 +1,150 @@
-# LabSetup Windows Provisioning Toolkit
+# LabSetup Windowsプロビジョニングツールキット
 
-LabSetup streamlines classroom and lab PCs by automating machine-scope application deployment, common development toolchains, and TeX publishing prerequisites. The repo now focuses on three scripted stages:
+LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリケーション展開、一般的な開発ツールチェーン、TeXパブリッシングの前提条件のインストールを自動化し、セットアップを効率化します。このリポジトリは現在、以下の3つのスクリプト化されたステージに焦点を当てています。
 
-1. Deploy this repository to `C:\ProgramData\LabSetup` for a managed copy.
-2. Publish a "Lab Setup" shortcut for every user's desktop.
-3. Run the consolidated machine bootstrap that installs, pins, and configures everything.
+1.  管理されたコピーとして、このリポジトリを `C:\ProgramData\LabSetup` に展開します。
+2.  すべてのユーザーのデスクトップに「Lab Setup」ショートカットを発行します。
+3.  すべてをインストール、ピン留め、設定する統合されたマシンブートストラップを実行します。
 
 ---
 
-## Repository Layout
+## リポジトリのレイアウト
 
 ```
 .
 +-- config/
-|   \-- lab-setup-config.json        # Package metadata + taskbar pin targets
+|   \-- lab-setup-config.json        # パッケージのメタデータ + タスクバーへのピン留めターゲット
 +-- scripts/
-|   +-- Deploy-LabSetup.ps1          # Mirror repo into ProgramData (admin)
-|   +-- Publish-SetupShortcut.ps1    # Create the Lab Setup desktop shortcut (admin)
-|   +-- Setup-LabMachine.ps1         # Install apps/toolchains, pin taskbar, log output (admin)
-|   \-- LabSetup.Common.psm1         # Shared module with winget + taskbar helpers
+|   +-- Deploy-LabSetup.ps1          # ProgramDataにリポジトリをミラーリング (管理者)
+|   +-- Publish-SetupShortcut.ps1    # Lab Setupデスクトップショートカットを作成 (管理者)
+|   +-- Setup-LabMachine.ps1         # アプリ/ツールチェーンのインストール、タスクバーへのピン留め、出力のログ記録 (管理者)
+|   \-- LabSetup.Common.psm1         # winget + タスクバーヘルパーを含む共有モジュール
 \-- README.md
 ```
 
-All scripts preserve four-space indentation, approved verbs, and run in place before you copy to `C:\ProgramData\LabSetup` for production mirroring.
+すべてのスクリプトは、4スペースのインデント、承認された動詞を維持し、本番用のミラーリングのために `C:\ProgramData\LabSetup` にコピーする前に、その場で実行されます。
 
 ---
 
-## Prerequisites
+## 前提条件
 
-- Windows 11 22H2 or later with the Windows Package Manager (winget) available.
-- Administrative PowerShell session with internet access to reach Microsoft and vendor feeds.
-- Permission to write to `C:\ProgramData` and `C:\Users\Public\Desktop`.
-
----
-
-## End-to-End Workflow
-
-1. **Deploy the managed copy (administrator)**
-   ```powershell
-   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-   .\scripts\Deploy-LabSetup.ps1 -SourcePath (Get-Location) -DestinationPath 'C:\ProgramData\LabSetup' -Mirror
-   ```
-   - Uses `robocopy` to mirror the repository while excluding `.git`, `.github`, `logs`, and `cache` directories.
-   - Sets ACLs so Administrators have Full Control and Users have Read & Execute.
-
-2. **Publish the desktop shortcut (administrator)**
-   ```powershell
-   C:\ProgramData\LabSetup\scripts\Publish-SetupShortcut.ps1 -Force
-   ```
-   - Creates `C:\Users\Public\Desktop\Lab Setup.lnk`, pointing to `Setup-LabMachine.ps1` with execution policy bypass.
-
-3. **Provision the workstation (administrator)**
-   ```powershell
-   C:\ProgramData\LabSetup\scripts\Setup-LabMachine.ps1
-   ```
-   - Installs Slack, Visual Studio Code, Google Chrome, LTspice, Git, Git LFS, Quarto, and MiKTeX with `winget install --scope machine` so packages land under Program Files.citeturn0search2
-   - Downloads and installs LayoutEditor from the vendor MSI because it is not published in the community winget feed.citeturn4search0turn4search1
-   - Configures uv-managed Python (`uv python install 3.12`) and sets `UV_PYTHON_INSTALL_DIR` under ProgramData for a shared interpreter.citeturn1search0
-   - Sets Volta's toolchain location inside ProgramData, installs Node LTS, and adds global TypeScript via `volta install`.citeturn2search0turn2search4
-   - Enables MiKTeX automatic package installs and refreshes the filename database with `initexmf --admin` commands.citeturn3search0
-   - Pins Slack, VS Code, Chrome, LTspice, and LayoutEditor to the taskbar after verifying executable paths.
-   - Streams console output to `C:\ProgramData\LabSetup\logs\LabSetup_yyyyMMdd_HHmmss.log`.
-
-Each step is idempotent—rerun the machine setup script whenever `config\lab-setup-config.json` changes.
+-   Windows 11 22H2以降で、Windowsパッケージマネージャー（winget）が利用可能であること。
+-   Microsoftおよびベンダーのフィードにアクセスするためのインターネット接続を備えた管理者PowerShellセッション。
+-   `C:\ProgramData` および `C:\Users\Public\Desktop` への書き込み権限。
 
 ---
 
-## What `Setup-LabMachine.ps1` Covers
+## エンドツーエンドのワークフロー
 
-| Phase | Details |
+1.  **管理コピーの展開（管理者）**
+    ```powershell
+    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+    .\scripts\Deploy-LabSetup.ps1 -SourcePath (Get-Location) -DestinationPath 'C:\ProgramData\LabSetup' -Mirror
+    ```
+    -   `.git`、`.github`、`logs`、`cache` ディレクトリを除外しながら、`robocopy` を使用してリポジトリをミラーリングします。
+    -   管理者がフルコントロールを持ち、ユーザーが読み取りと実行権限を持つようにACLを設定します。
+
+2.  **デスクトップショートカットの発行（管理者）**
+    ```powershell
+    C:\ProgramData\LabSetup\scripts\Publish-SetupShortcut.ps1 -Force
+    ```
+    -   `C:\Users\Public\Desktop\Lab Setup.lnk` を作成し、実行ポリシーバイパス付きで `Setup-LabMachine.ps1` を指すようにします。
+
+3.  **ワークステーションのプロビジョニング（管理者）**
+    ```powershell
+    C:\ProgramData\LabSetup\scripts\Setup-LabMachine.ps1
+    ```
+    -   Slack、Visual Studio Code、Google Chrome、LTspice、Git、Git LFS、Quarto、MiKTeXを `winget install --scope machine` でインストールし、パッケージがProgram Files以下に配置されるようにします。
+    -   コミュニティのwingetフィードで公開されていないため、ベンダーのMSIからLayoutEditorをダウンロードしてインストールします。
+    -   uvで管理されるPython（`uv python install 3.12`）を設定し、共有インタープリターのために `UV_PYTHON_INSTALL_DIR` をProgramData以下に設定します。
+    -   Voltaのツールチェーンの場所をProgramData内に設定し、Node LTSをインストールし、`volta install` を介してグローバルにTypeScriptを追加します。
+    -   `initexmf --admin` コマンドでMiKTeXの自動パッケージインストールを有効にし、ファイル名データベースを更新します。
+    -   実行可能ファイルのパスを確認した後、Slack、VS Code、Chrome、LTspice、LayoutEditorをタスクバーにピン留めします。
+    -   コンソール出力を `C:\ProgramData\LabSetup\logs\LabSetup_yyyyMMdd_HHmmss.log` にストリーミングします。
+
+各ステップはべき等です。`config\lab-setup-config.json` が変更された場合は、マシンセットアップスクリプトを再実行してください。
+
+---
+
+## `Setup-LabMachine.ps1` がカバーする内容
+
+| フェーズ | 詳細 |
 | --- | --- |
-| **Package install** | Iterates `wingetPackages` entries, calling winget with `--scope machine --accept-package-agreements --accept-source-agreements`. Manual installers (currently LayoutEditor MSI) are cached in `ProgramData\LabSetup\cache`.citeturn0search2turn4search0 |
-| **Taskbar pinning** | Uses Shell COM verbs (`taskbarpin`) with configurable retries defined in the config file.
-| **Volta toolchain** | Sets `VOLTA_HOME`, creates `bin`, adds it to PATH, installs Node LTS and TypeScript via Volta.citeturn2search0turn2search4 |
-| **uv toolchain** | Sets `UV_HOME`, `UV_PYTHON_INSTALL_DIR`, adds `bin` to PATH, and installs Python 3.12 through uv.citeturn1search0 |
-| **Git + LFS** | Runs `git lfs install --system` after winget installs Git and Git LFS.
-| **TeX provisioning** | Executes `initexmf --admin --set-config-value [MPM]AutoInstall=1` and `initexmf --admin --update-fndb` for MiKTeX.citeturn3search0 |
-| **Logging** | Every action is logged under `ProgramData\LabSetup\logs` alongside stdout.
+| **パッケージインストール** | `wingetPackages` エントリを反復処理し、`--scope machine --accept-package-agreements --accept-source-agreements` を付けてwingetを呼び出します。手動インストーラー（現在はLayoutEditor MSI）は `ProgramData\LabSetup\cache` にキャッシュされます。 |
+| **タスクバーへのピン留め** | 設定ファイルで定義された再試行回数で、Shell COM動詞（`taskbarpin`）を使用します。
+| **Voltaツールチェーン** | `VOLTA_HOME` を設定し、`bin` を作成し、PATHに追加し、Volta経由でNode LTSとTypeScriptをインストールします。 |
+| **uvツールチェーン** | `UV_HOME`、`UV_PYTHON_INSTALL_DIR` を設定し、`bin` をPATHに追加し、uvを介してPython 3.12をインストールします。 |
+| **Git + LFS** | wingetがGitとGit LFSをインストールした後、`git lfs install --system` を実行します。
+| **TeXプロビジョニング** | MiKTeX用に `initexmf --admin --set-config-value [MPM]AutoInstall=1` と `initexmf --admin --update-fndb` を実行します。 |
+| **ロギング** | すべてのアクションは、標準出力とともに `ProgramData\LabSetup\logs` 以下にログ記録されます。
 
 ---
 
-## Configuration Reference (`config\lab-setup-config.json`)
+## 設定リファレンス (`config\lab-setup-config.json`)
 
-- `wingetPackages`: Array of objects with `id`, `displayName`, optional `version`, and `pinToTaskbar`. Entries that include an `installer` block run the custom installer workflow (used for LayoutEditor).citeturn4search0turn4search1
-- `volta`: Desired Node release (`nodeVersion`) plus any global packages to install via Volta.citeturn2search0turn2search4
-- `uv`: Python versions to provision; each is installed with `uv python install` and shared via ProgramData.citeturn1search0
-- `git`: Toggle `configureLfs` to run `git lfs install --system`.
-- `tex`: Flags for MiKTeX automation (`autoInstallMissingPackages`, `refreshFileDatabase`).citeturn3search0
-- `taskbar`: Retry count and delay (seconds) for pinning operations.
+-   `wingetPackages`: `id`、`displayName`、オプションの `version`、`pinToTaskbar` を持つオブジェクトの配列。`installer` ブロックを含むエントリは、カスタムインストーラーワークフローを実行します（LayoutEditorに使用）。
+-   `volta`: 目的のNodeリリース（`nodeVersion`）と、Volta経由でインストールするグローバルパッケージ。
+-   `uv`: プロビジョニングするPythonのバージョン。それぞれが `uv python install` でインストールされ、ProgramDataを介して共有されます。
+-   `git`: `git lfs install --system` を実行するための `configureLfs` の切り替え。
+-   `tex`: MiKTeX自動化のためのフラグ（`autoInstallMissingPackages`、`refreshFileDatabase`）。
+-   `taskbar`: ピン留め操作の再試行回数と遅延（秒）。
 
-Update the JSON file when bumping versions or adding software, then rerun `Setup-LabMachine.ps1` to apply the changes.
-
----
-
-## Verification Checklist
-
-1. **winget**
-   ```powershell
-   winget list --scope machine --id SlackTechnologies.Slack
-   winget list --scope machine --id Microsoft.VisualStudioCode
-   ```
-2. **Volta/TypeScript**
-   ```powershell
-   $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine')
-   node --version
-   tsc --version
-   ```
-3. **uv/Python**
-   ```powershell
-   uv python list
-   python --version
-   ```
-4. **TeX**
-   ```powershell
-   initexmf --admin --report | Select-String AutoInstall
-   quarto check
-   ```
-5. **Desktop experience**
-   - Confirm taskbar pins exist and launch for a standard user profile.
-   - Validate `C:\ProgramData\LabSetup\logs` contains the latest run log.
+バージョンを上げたり、ソフトウェアを追加したりする場合は、JSONファイルを更新してから `Setup-LabMachine.ps1` を再実行して変更を適用します。
 
 ---
 
-## Maintenance Tips
+## 検証チェックリスト
 
-- **Package updates**: Edit `lab-setup-config.json` and rerun `Setup-LabMachine.ps1`. For LayoutEditor, update the MSI download URL from the vendor portal.citeturn4search1
-- **Additional software**: Add another object to `wingetPackages`; ensure the manifest supports machine scope before committing the change.citeturn0search2
-- **Shortcut customisation**: Use `Publish-SetupShortcut.ps1 -ShortcutName 'Robotics Setup.lnk'` for lab-specific names.
-- **Cache/log hygiene**: Purge `ProgramData\LabSetup\cache` and `logs` periodically if disk space is constrained.
+1.  **winget**
+    ```powershell
+    winget list --scope machine --id SlackTechnologies.Slack
+    winget list --scope machine --id Microsoft.VisualStudioCode
+    ```
+2.  **Volta/TypeScript**
+    ```powershell
+    $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine')
+    node --version
+    tsc --version
+    ```
+3.  **uv/Python**
+    ```powershell
+    uv python list
+    python --version
+    ```
+4.  **TeX**
+    ```powershell
+    initexmf --admin --report | Select-String AutoInstall
+    quarto check
+    ```
+5.  **デスクトップエクスペリエンス**
+    -   標準ユーザープロファイルでタスクバーのピンが存在し、起動することを確認します。
+    -   `C:\ProgramData\LabSetup\logs` に最新の実行ログが含まれていることを検証します。
 
 ---
 
-## Troubleshooting
+## メンテナンスのヒント
 
-- **winget errors about scope**: Some manifests do not support machine installations—verify support before adding new packages.citeturn0search2turn0search3
-- **Taskbar pins missing**: Rerun `Setup-LabMachine.ps1 -SkipVolta -SkipUv -SkipTeX -SkipGitLfs` to focus on the pinning phase after Explorer finishes creating shortcuts.
-- **uv not on PATH**: Reload the machine PATH in the current session (`$env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine')`) or reboot to inherit environment changes.
-- **MiKTeX prompts for packages**: Rerun `Setup-LabMachine.ps1` or execute the `initexmf --admin` commands manually to re-enable AutoInstall.citeturn3search0
-- **LayoutEditor update required**: Replace the MSI URL in the config; the script downloads the new build to the cache and reinstalls via `msiexec`.citeturn4search0turn4search1
+-   **パッケージの更新**: `lab-setup-config.json` を編集し、`Setup-LabMachine.ps1` を再実行します。LayoutEditorの場合は、ベンダーポータルからMSIダウンロードURLを更新します。
+-   **追加のソフトウェア**: `wingetPackages` に別のオブジェクトを追加します。変更をコミットする前に、マニフェストがマシンスコープをサポートしていることを確認してください。
+-   **ショートカットのカスタマイズ**: ラボ固有の名前には `Publish-SetupShortcut.ps1 -ShortcutName 'Robotics Setup.lnk'` を使用します。
+-   **キャッシュ/ログの整理**: ディスク容量が限られている場合は、`ProgramData\LabSetup\cache` と `logs` を定期的に削除します。
 
 ---
 
-## Roadmap Ideas
+## トラブルシューティング
 
-- Add a scheduled task wrapper around `winget upgrade --all --scope machine --silent` for background patching.
-- Extend the config with additional engineering software (e.g., KiCad, Fusion 360) once machine-scope manifests are confirmed.
-- Export `Setup-LabMachine.ps1` into imaging/MDT pipelines to pre-provision classrooms at scale.
+-   **スコープに関するwingetエラー**: 一部のマニフェストはマシンインストールをサポートしていません。新しいパッケージを追加する前にサポートを確認してください。
+-   **タスクバーのピンが見つからない**: Explorerがショートカットの作成を完了した後、`Setup-LabMachine.ps1 -SkipVolta -SkipUv -SkipTeX -SkipGitLfs` を再実行して、ピン留めフェーズに集中します。
+-   **uvがPATHにない**: 現在のセッションでマシンのPATHを再読み込みするか（`$env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine')`）、再起動して環境の変更を継承します。
+-   **MiKTeXがパッケージを要求する**: `Setup-LabMachine.ps1` を再実行するか、`initexmf --admin` コマンドを手動で実行してAutoInstallを再度有効にします。
+-   **LayoutEditorの更新が必要**: 設定ファイル内のMSI URLを置き換えます。スクリプトは新しいビルドをキャッシュにダウンロードし、`msiexec` を介して再インストールします。
 
-With these changes, lab admins run three commands and receive a consistent, ready-to-teach Windows environment that covers communication, coding, simulation, and publishing toolchains.
+---
+
+## ロードマップのアイデア
+
+-   バックグラウンドでのパッチ適用のために、`winget upgrade --all --scope machine --silent` をラップするスケジュールされたタスクを追加します。
+-   マシンスコープのマニフェストが確認されたら、追加のエンジニアリングソフトウェア（例：KiCad、Fusion 360）で設定を拡張します。
+-   `Setup-LabMachine.ps1` をイメージング/MDTパイプラインにエクスポートして、教室を大規模に事前プロビジョニングします。
+
+これらの変更により、ラボ管理者は3つのコマンドを実行するだけで、コミュニケーション、コーディング、シミュレーション、およびパブリッシングのツールチェーンをカバーする、一貫性のある、すぐに教えられるWindows環境を受け取ることができます。
