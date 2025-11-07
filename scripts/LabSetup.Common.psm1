@@ -301,7 +301,7 @@ function Install-WingetPackage {
 
     $id = $Package.id
     $displayName = $Package.displayName
-    $args = @(
+    $wingetArgs = @(
         'install',
         '--id', $id,
         '--exact',
@@ -311,19 +311,19 @@ function Install-WingetPackage {
     )
 
     if ($Package.silent) {
-        $args += '--silent'
+        $wingetArgs += '--silent'
     }
 
     if ($Package.version) {
-        $args += @('--version', $Package.version)
+        $wingetArgs += @('--version', $Package.version)
     }
 
     if ($Package.override) {
-        $args += @('--override', $Package.override)
+        $wingetArgs += @('--override', $Package.override)
     }
 
     Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
-    $result = Invoke-Winget -Arguments $args
+    $result = Invoke-Winget -Arguments $wingetArgs
     if ($result.ExitCode -eq 0) {
         Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
     }
@@ -538,11 +538,6 @@ function Set-MikTexConfiguration {
 
     if (-not $Config.tex) { return }
 
-    $miktexExe = Resolve-ExecutableFromCandidates -Candidates @(
-        (Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\miktex.exe'),
-        (Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\miktex.exe'),
-        'miktex'
-    )
     $initexmf = Resolve-ExecutableFromCandidates -Candidates @(
         (Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe'),
         (Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath 'MiKTeX\miktex\bin\x64\initexmf.exe'),
