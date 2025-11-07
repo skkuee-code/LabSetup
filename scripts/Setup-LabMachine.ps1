@@ -34,6 +34,19 @@ if (-not $ConfigPath) {
     $ConfigPath = Join-Path -Path $repoRoot -ChildPath 'config\lab-setup-config.json'
 }
 
+$consoleUtf8 = [System.Text.UTF8Encoding]::new($false)
+try {
+    if ($null -ne [Console]::OutputEncoding -and [Console]::OutputEncoding.CodePage -ne $consoleUtf8.CodePage) {
+        [Console]::OutputEncoding = $consoleUtf8
+    }
+    if ($null -ne [Console]::InputEncoding -and [Console]::InputEncoding.CodePage -ne $consoleUtf8.CodePage) {
+        [Console]::InputEncoding = $consoleUtf8
+    }
+}
+catch {
+    # Some hosts (for example, remoting) do not allow encoding changes; ignore and continue.
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

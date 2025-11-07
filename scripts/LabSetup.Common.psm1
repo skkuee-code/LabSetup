@@ -1,6 +1,13 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$script:WingetExitCodes = @{
+    UpdateNotApplicable = -1978335189
+    UpgradeVersionNotNewer = -1978335153
+    PackageAlreadyInstalled = -1978335135
+    NoApplicableInstaller = -1978335216
+}
+
 function Confirm-LabAdministrator {
     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
@@ -113,19 +120,88 @@ function Invoke-Winget {
         [Parameter(Mandatory)]
         [string[]]$Arguments,
         [int[]]$AcceptableExitCodes = @(),
-        [switch]$IgnoreError
+        [switch]$IgnoreError,
+        [string]$LogFilePath,
+        [System.IO.StreamWriter]$LogWriter
     )
 
     $winget = Get-WingetExecutable
-    $output = & $winget @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
-    $isAcceptable = ($exitCode -eq 0) -or ($AcceptableExitCodes -contains $exitCode)
-    if (-not $isAcceptable -and -not $IgnoreError) {
-        throw "winget exited with code $exitCode.`n$($output | Out-String)"
+
+    if (-not $LogFilePath) {
+        $tempRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
+        New-LabDirectory -Path $tempRoot
+        $LogFilePath = Join-Path -Path $tempRoot -ChildPath ("winget_{0:yyyyMMdd_HHmmssfff}.log" -f (Get-Date))
+    } else {
+        $logDir = Split-Path -Path $LogFilePath -Parent
+        if ($logDir) {
+            New-LabDirectory -Path $logDir
+        }
     }
+
+    $argumentsWithLogging = @($Arguments)
+    $hasLogArgument = $false
+    for ($i = 0; $i -lt $argumentsWithLogging.Count; $i++) {
+        $current = $argumentsWithLogging[$i]
+        if ($null -eq $current) { continue }
+        if ($current -eq '--log' -or $current -eq '-o') {
+            $hasLogArgument = $true
+            break
+        }
+    }
+    if (-not $hasLogArgument) {
+        $argumentsWithLogging += @('--log', $LogFilePath, '--verbose-logs')
+    }
+
+    $startParams = @{
+        FilePath     = $winget
+        ArgumentList = $argumentsWithLogging
+        NoNewWindow  = $true
+        PassThru     = $true
+        Wait         = $true
+    }
+
+    try {
+        $process = Start-Process @startParams
+    }
+    catch {
+        throw "Failed to start winget: $($_.Exception.Message)"
+    }
+
+    if (-not $process) {
+        throw 'Failed to launch winget process.'
+    }
+
+    $exitCode = $process.ExitCode
+    $isAcceptable = ($exitCode -eq 0) -or ($AcceptableExitCodes -contains $exitCode)
+
+    if ($LogWriter -and (Test-Path -LiteralPath $LogFilePath -PathType Leaf)) {
+        Write-LabLog -Message "winget log captured at $LogFilePath" -LogWriter $LogWriter
+    }
+
+    if (-not $isAcceptable -and -not $IgnoreError) {
+        $logExcerpt = $null
+        if (Test-Path -LiteralPath $LogFilePath -PathType Leaf) {
+            try {
+                $logExcerpt = (Get-Content -LiteralPath $LogFilePath -Tail 40)
+            }
+            catch {
+                $logExcerpt = $null
+            }
+        }
+
+        $message = "winget exited with code $exitCode."
+        if ($logExcerpt) {
+            $message += "`nLast winget log lines:`n$($logExcerpt -join [Environment]::NewLine)"
+        } elseif ($LogFilePath) {
+            $message += "`nSee $LogFilePath for details."
+        }
+
+        throw $message
+    }
+
     return [pscustomobject]@{
         ExitCode = $exitCode
-        Output = $output
+        LogPath  = $LogFilePath
     }
 }
 
@@ -413,57 +489,105 @@ function Install-WingetPackage {
     param(
         [Parameter(Mandatory)]
         [hashtable]$Package,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [hashtable]$Config
     )
 
     $id = $Package.id
     $displayName = $Package.displayName
-    $wingetArgs = @(
+    $sanitizedId = ($id -replace '[^A-Za-z0-9_.-]', '_')
+
+    $wingetLogRoot = $null
+    if ($Config -and $Config.programDataPath) {
+        $wingetLogRoot = Join-Path -Path $Config.programDataPath -ChildPath 'logs\winget'
+    } else {
+        $wingetLogRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
+    }
+    New-LabDirectory -Path $wingetLogRoot
+
+    $baseArgs = @(
         'install',
         '--id', $id,
         '--exact',
-        '--scope', 'machine',
         '--accept-package-agreements',
         '--accept-source-agreements'
     )
 
-    $silentFlag = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent'
-    if ($silentFlag) {
-        $wingetArgs += '--silent'
+    $scope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
+    if ([string]::IsNullOrWhiteSpace($scope)) {
+        $scope = 'machine'
     }
+    $baseArgs += @('--scope', $scope)
 
     $declaredVersion = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'version'
     if ($declaredVersion) {
-        $wingetArgs += @('--version', $declaredVersion)
+        $baseArgs += @('--version', $declaredVersion)
     }
 
     $overrideArgs = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'override'
     if ($overrideArgs) {
-        $wingetArgs += @('--override', $overrideArgs)
+        $baseArgs += @('--override', $overrideArgs)
     }
 
     $expectedExitCodes = @(
-        -1978335189, # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE
-        -1978335153, # APPINSTALLER_CLI_ERROR_UPGRADE_VERSION_NOT_NEWER
-        -1978335135  # APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED
+        $script:WingetExitCodes.UpdateNotApplicable,
+        $script:WingetExitCodes.UpgradeVersionNotNewer,
+        $script:WingetExitCodes.PackageAlreadyInstalled
     )
 
-    Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
-    $result = Invoke-Winget -Arguments $wingetArgs -AcceptableExitCodes $expectedExitCodes
-    switch ($result.ExitCode) {
-        0 {
-            Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
-        }
-        -1978335189 {
-            Write-LabLog -Message "$displayName is already at the latest version; skipping." -LogWriter $LogWriter
-        }
-        -1978335153 {
-            Write-LabLog -Message "$displayName is newer than the requested version; leaving existing install in place." -LogWriter $LogWriter
-        }
-        -1978335135 {
-            Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
+    $silentFlag = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent')
+    $installAttempts = @()
+    if ($silentFlag) {
+        $installAttempts += @{
+            Name      = 'silent'
+            ExtraArgs = @('--silent')
+            Message   = 'silent'
         }
     }
+    $installAttempts += @{
+        Name      = 'interactive'
+        ExtraArgs = @()
+        Message   = 'interactive'
+    }
+
+    Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
+
+    :InstallAttempt foreach ($attempt in $installAttempts) {
+        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
+        $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
+        $arguments = @($baseArgs + $attempt.ExtraArgs)
+        $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath
+
+        switch ($result.ExitCode) {
+            0 {
+                Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
+                return
+            }
+            $script:WingetExitCodes.UpdateNotApplicable {
+                Write-LabLog -Message "$displayName is already at the latest version; skipping." -LogWriter $LogWriter
+                return
+            }
+            $script:WingetExitCodes.UpgradeVersionNotNewer {
+                Write-LabLog -Message "$displayName is newer than the requested version; leaving existing install in place." -LogWriter $LogWriter
+                return
+            }
+            $script:WingetExitCodes.PackageAlreadyInstalled {
+                Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
+                return
+            }
+            $script:WingetExitCodes.NoApplicableInstaller {
+                if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
+                    Write-LabLog -Message "$displayName does not provide silent install metadata; retrying with interactive mode." -LogWriter $LogWriter
+                    continue InstallAttempt
+                }
+            }
+        }
+
+        $message = "winget failed to install $displayName (exit code $($result.ExitCode)). Review $($result.LogPath) for details."
+        throw $message
+    }
+
+    throw "winget failed to install $displayName after exhausting available install modes."
 }
 
 function Install-ManualPackage {
@@ -617,7 +741,7 @@ function Install-LabPackages {
         if ($hasInstallerMetadata) {
             Install-ManualPackage -Package $package -Config $Config -LogWriter $LogWriter
         } else {
-            Install-WingetPackage -Package $package -LogWriter $LogWriter
+            Install-WingetPackage -Package $package -LogWriter $LogWriter -Config $Config
         }
     }
 }
@@ -727,7 +851,7 @@ function Set-UvToolchain {
         $uvPackage = Get-LabPackageById -Config $Config -PackageId $uvPackageId
         if ($uvPackage) {
             Write-LabLog -Message "uv executable not found; attempting winget install for $uvPackageId ..." -LogWriter $LogWriter
-            Install-WingetPackage -Package $uvPackage -LogWriter $LogWriter
+            Install-WingetPackage -Package $uvPackage -LogWriter $LogWriter -Config $Config
             $uvExe = Resolve-ExecutableFromCandidates -Candidates $uvCandidates
         }
     }
@@ -819,7 +943,7 @@ function Set-MikTexConfiguration {
         $miktexPackage = Get-LabPackageById -Config $Config -PackageId $miktexPackageId
         if ($miktexPackage) {
             Write-LabLog -Message "MiKTeX utilities not found; attempting winget install for $miktexPackageId ..." -LogWriter $LogWriter
-            Install-WingetPackage -Package $miktexPackage -LogWriter $LogWriter
+            Install-WingetPackage -Package $miktexPackage -LogWriter $LogWriter -Config $Config
             $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
             $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
         }
