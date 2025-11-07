@@ -9,6 +9,14 @@ $script:WingetExitCodes = @{
     NoInstalledPackage   = -1978335212
 }
 
+$script:WingetDefaultAcceptableExitCodes = @(
+    0,
+    $script:WingetExitCodes.UpdateNotApplicable,
+    $script:WingetExitCodes.UpgradeVersionNotNewer,
+    $script:WingetExitCodes.PackageAlreadyInstalled,
+    $script:WingetExitCodes.NoApplicableInstaller
+) | Where-Object { $_ -ne $null } | Select-Object -Unique
+
 function Confirm-LabAdministrator {
     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
@@ -243,7 +251,22 @@ function Invoke-Winget {
 
     $process.WaitForExit()
     $exitCode = $process.ExitCode
-    $isAcceptable = ($exitCode -eq 0) -or ($AcceptableExitCodes -contains $exitCode)
+
+    $effectiveAcceptableCodes = @()
+    if ($AcceptableExitCodes) {
+        $effectiveAcceptableCodes += $AcceptableExitCodes
+    }
+    if ($script:WingetDefaultAcceptableExitCodes) {
+        $effectiveAcceptableCodes += $script:WingetDefaultAcceptableExitCodes
+    }
+    if ($effectiveAcceptableCodes) {
+        $effectiveAcceptableCodes = @($effectiveAcceptableCodes | Where-Object { $_ -ne $null } | Select-Object -Unique)
+    }
+
+    $isAcceptable = ($exitCode -eq 0)
+    if (-not $isAcceptable -and $effectiveAcceptableCodes) {
+        $isAcceptable = $effectiveAcceptableCodes -contains $exitCode
+    }
 
     if ($LogWriter -and (Test-Path -LiteralPath $LogFilePath -PathType Leaf)) {
         Write-LabLog -Message "winget log captured at $LogFilePath" -LogWriter $LogWriter
@@ -260,7 +283,8 @@ function Invoke-Winget {
             }
         }
 
-        $message = "winget exited with code $exitCode."
+        $exitCodeDisplay = if ($null -ne $exitCode) { $exitCode } else { 'unknown' }
+        $message = "winget exited with code $exitCodeDisplay."
         if ($logExcerpt) {
             $message += "`nLast winget log lines:`n$($logExcerpt -join [Environment]::NewLine)"
         } elseif ($LogFilePath) {
