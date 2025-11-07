@@ -220,11 +220,15 @@ function Invoke-TaskbarVerb {
     )
 
     foreach ($verb in $ShellItem.Verbs()) {
-        if ($verb.CanonicalName -eq $VerbName) {
+        $canonicalProperty = $verb.PSObject.Properties['CanonicalName']
+        $canonicalName = if ($canonicalProperty) { $canonicalProperty.Value } else { $null }
+        if ($canonicalName -eq $VerbName) {
             $verb.DoIt()
             return $true
         }
-        $normalized = ($verb.Name -replace '&', '').Trim()
+        $nameProperty = $verb.PSObject.Properties['Name']
+        $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
+        $normalized = ($verbName -replace '&', '').Trim()
         switch ($VerbName) {
             'taskbarpin' {
                 if ($normalized -match 'Pin to taskbar' -or $normalized -match 'タスク バーにピン留め') {
@@ -251,10 +255,14 @@ function Test-TaskbarPinned {
     )
 
     foreach ($verb in $ShellItem.Verbs()) {
-        if ($verb.CanonicalName -eq 'taskbarunpin') {
+        $canonicalProperty = $verb.PSObject.Properties['CanonicalName']
+        $canonicalName = if ($canonicalProperty) { $canonicalProperty.Value } else { $null }
+        if ($canonicalName -eq 'taskbarunpin') {
             return $true
         }
-        $normalized = ($verb.Name -replace '&', '').Trim()
+        $nameProperty = $verb.PSObject.Properties['Name']
+        $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
+        $normalized = ($verbName -replace '&', '').Trim()
         if ($normalized -match 'Unpin from taskbar' -or $normalized -match 'タスク バーからピン留めを外す') {
             return $true
         }
