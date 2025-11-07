@@ -15,30 +15,29 @@ function ConvertTo-Hashtable {
         $InputObject
     )
 
-    switch ($InputObject) {
-        { $_ -is [System.Collections.IDictionary] } {
-            $result = @{}
-            foreach ($key in $_.Keys) {
-                $result[$key] = ConvertTo-Hashtable -InputObject $_[$key]
-            }
-            return $result
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $result = @{}
+        foreach ($key in $InputObject.Keys) {
+            $result[$key] = ConvertTo-Hashtable -InputObject $InputObject[$key]
         }
-        { $_ -is [System.Management.Automation.PSObject] } {
-            $result = @{}
-            foreach ($property in $_.PSObject.Properties) {
-                $result[$property.Name] = ConvertTo-Hashtable -InputObject $property.Value
-            }
-            return $result
-        }
-        { $_ -is [System.Collections.IEnumerable] -and -not ($_ -is [string]) } {
-            $list = @()
-            foreach ($item in $_) {
-                $list += ,(ConvertTo-Hashtable -InputObject $item)
-            }
-            return ,$list
-        }
-        default { return $InputObject }
+        return $result
     }
+    elseif ($InputObject -is [System.Management.Automation.PSObject]) {
+        $result = @{}
+        foreach ($property in $InputObject.PSObject.Properties) {
+            $result[$property.Name] = ConvertTo-Hashtable -InputObject $property.Value
+        }
+        return $result
+    }
+    elseif ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
+        $items = @()
+        foreach ($item in $InputObject) {
+            $items += ,(ConvertTo-Hashtable -InputObject $item)
+        }
+        return ,$items
+    }
+
+    return $InputObject
 }
 
 function Get-OptionalPropertyValue {
