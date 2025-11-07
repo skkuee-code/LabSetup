@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = (Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'config\lab-setup-config.json'),
+    [string]$ConfigPath,
     [switch]$SkipTaskbarPins,
     [switch]$SkipVolta,
     [switch]$SkipUv,
@@ -9,10 +9,24 @@ param(
     [switch]$SkipGitLfs
 )
 
+$scriptRoot = if (-not [string]::IsNullOrEmpty($PSScriptRoot)) {
+    $PSScriptRoot
+} elseif ($MyInvocation?.MyCommand?.Path) {
+    Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+} else {
+    (Get-Location).ProviderPath
+}
+
+$repoRoot = Split-Path -Path $scriptRoot -Parent
+
+if (-not $ConfigPath) {
+    $ConfigPath = Join-Path -Path $repoRoot -ChildPath 'config\lab-setup-config.json'
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$commonModule = Join-Path -Path $PSScriptRoot -ChildPath 'LabSetup.Common.psm1'
+$commonModule = Join-Path -Path $scriptRoot -ChildPath 'LabSetup.Common.psm1'
 Import-Module -Name $commonModule -Force
 
 Confirm-LabAdministrator
