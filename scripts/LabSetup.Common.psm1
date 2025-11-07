@@ -1265,6 +1265,102 @@ function Set-LabTaskbarPins {
     }
 }
 
+function Get-VoltaNodeInstallArguments {
+    param(
+        [string]$NodeVersion
+    )
+
+    if ([string]::IsNullOrWhiteSpace($NodeVersion)) {
+        return @('install', 'node')
+    }
+
+    $normalized = $NodeVersion.Trim()
+    if ($normalized.StartsWith('node@', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return @('install', $normalized)
+    }
+
+    $alias = $normalized.ToLowerInvariant()
+    if ($alias -in @('lts', 'latest', 'current', 'stable')) {
+        return @('install', 'node')
+    }
+
+    return @('install', "node@$normalized")
+}
+
+function Test-VoltaToolPresence {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ToolName,
+        [string]$ExpectedVersion,
+        [string]$ListOutput
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ToolName) -or [string]::IsNullOrWhiteSpace($ListOutput)) {
+        return $false
+    }
+
+    $trimmed = $ListOutput.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) { return $false }
+
+    $toolPattern = "{0}@" -f [System.Text.RegularExpressions.Regex]::Escape($ToolName)
+    if (-not [System.Text.RegularExpressions.Regex]::IsMatch($trimmed, $toolPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        return $false
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) {
+        return $true
+    }
+
+    $normalizedVersion = $ExpectedVersion.Trim().ToLowerInvariant()
+    if ($normalizedVersion -in @('lts', 'latest', 'current', 'stable')) {
+        return $true
+    }
+
+    $versionPattern = "{0}{1}" -f $toolPattern, [System.Text.RegularExpressions.Regex]::Escape($ExpectedVersion.Trim())
+    return [System.Text.RegularExpressions.Regex]::IsMatch($trimmed, $versionPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+
+function Test-VoltaInstallResult {
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.Process]$Process,
+        [Parameter(Mandatory)]
+        [string]$VoltaExe,
+        [Parameter(Mandatory)]
+        [string]$ToolName,
+        [string]$ExpectedVersion,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    if ($Process.ExitCode -eq 0) {
+        return $true
+    }
+
+    $listArgs = @('list', $ToolName, '--format', 'plain')
+    $listOutput = $null
+    $listExitCode = -1
+
+    try {
+        $listOutput = (& $VoltaExe @listArgs 2>&1)
+        $listExitCode = $LASTEXITCODE
+    }
+    catch {
+        $listExitCode = -1
+        $listOutput = $null
+    }
+
+    $listText = if ($listOutput) { ($listOutput -join [Environment]::NewLine).Trim() } else { $null }
+
+    if ($listExitCode -eq 0 -and (Test-VoltaToolPresence -ToolName $ToolName -ExpectedVersion $ExpectedVersion -ListOutput $listText)) {
+        Write-LabLog -Message ("Volta returned exit code {0} installing {1}, but 'volta list' shows the tool is present; continuing." -f $Process.ExitCode, $ToolName) -LogWriter $LogWriter
+        return $true
+    }
+
+    $statusDetail = if ($listText) { $listText } else { "no output from 'volta list'" }
+    Write-LabLog -Message ("Volta exit code {0} installing {1}. 'volta list' result: {2}" -f $Process.ExitCode, $ToolName, $statusDetail) -LogWriter $LogWriter
+    return $false
+}
+
 function Set-VoltaToolchain {
     param(
         [Parameter(Mandatory)]
@@ -1289,13 +1385,29 @@ function Set-VoltaToolchain {
     $voltaBin = Join-Path -Path $voltaHome -ChildPath 'bin'
     New-LabDirectory -Path $voltaBin
     Add-MachinePathEntry -Path $voltaBin
+    $env:VOLTA_HOME = $voltaHome
     [Environment]::SetEnvironmentVariable('VOLTA_HOME', $voltaHome, 'Machine')
 
     if ($Config.volta.nodeVersion) {
-        $nodeArgs = @('install', "node@$($Config.volta.nodeVersion)")
-        Write-LabLog -Message "Configuring Volta Node version $($Config.volta.nodeVersion)..." -LogWriter $LogWriter
-        $nodeProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList $nodeArgs -Activity "Configuring Volta Node $($Config.volta.nodeVersion)"
-        if ($nodeProcess.ExitCode -ne 0) {
+        $nodeArgs = Get-VoltaNodeInstallArguments -NodeVersion $Config.volta.nodeVersion
+        $attempt = 0
+        $maxAttempts = 2
+        $nodeInstallSucceeded = $false
+
+        while (-not $nodeInstallSucceeded -and $attempt -lt $maxAttempts) {
+            $attempt++
+            if ($attempt -gt 1) {
+                Write-LabLog -Message "Retrying Volta Node installation (attempt $attempt of $maxAttempts)..." -LogWriter $LogWriter
+            }
+            else {
+                Write-LabLog -Message "Configuring Volta Node version $($Config.volta.nodeVersion)..." -LogWriter $LogWriter
+            }
+
+            $nodeProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList $nodeArgs -Activity "Configuring Volta Node $($Config.volta.nodeVersion)"
+            $nodeInstallSucceeded = Test-VoltaInstallResult -Process $nodeProcess -VoltaExe $voltaExe -ToolName 'node' -ExpectedVersion $Config.volta.nodeVersion -LogWriter $LogWriter
+        }
+
+        if (-not $nodeInstallSucceeded) {
             throw "Volta failed to install Node $($Config.volta.nodeVersion)."
         }
     }
