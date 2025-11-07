@@ -8,6 +8,7 @@
             "displayName": "Slack",
             "silent": true,
             "pinToTaskbar": true,
+            "appUserModelId": "com.squirrel.slack.slack",
             "taskbarTargets": [
                 "C:\\Program Files\\Slack\\slack.exe",
                 "C:\\Program Files (x86)\\Slack\\slack.exe"
