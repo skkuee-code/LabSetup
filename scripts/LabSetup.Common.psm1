@@ -41,6 +41,28 @@ function ConvertTo-Hashtable {
     }
 }
 
+function Get-OptionalPropertyValue {
+    param(
+        [Parameter(Mandatory)]
+        $InputObject,
+        [Parameter(Mandatory)]
+        [string]$PropertyName
+    )
+
+    if ($null -eq $InputObject) { return $null }
+
+    if ($InputObject -is [System.Collections.IDictionary] -and $InputObject.ContainsKey($PropertyName)) {
+        return $InputObject[$PropertyName]
+    }
+
+    $property = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -ne $property) {
+        return $property.Value
+    }
+
+    return $null
+}
+
 function Get-LabSetupConfig {
     param(
         [Parameter(Mandatory)]
@@ -310,16 +332,19 @@ function Install-WingetPackage {
         '--accept-source-agreements'
     )
 
-    if ($Package.silent) {
+    $silentFlag = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent'
+    if ($silentFlag) {
         $wingetArgs += '--silent'
     }
 
-    if ($Package.version) {
-        $wingetArgs += @('--version', $Package.version)
+    $declaredVersion = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'version'
+    if ($declaredVersion) {
+        $wingetArgs += @('--version', $declaredVersion)
     }
 
-    if ($Package.override) {
-        $wingetArgs += @('--override', $Package.override)
+    $overrideArgs = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'override'
+    if ($overrideArgs) {
+        $wingetArgs += @('--override', $overrideArgs)
     }
 
     Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
