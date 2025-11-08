@@ -189,7 +189,7 @@ function Resolve-LabShortcutPath {
 
     $shellAppId = $null
     foreach ($candidate in $normalizedCandidates) {
-        $candidateAppId = Get-LabAppUserModelIdFromText -Input $candidate
+        $candidateAppId = Get-LabAppUserModelIdFromText -InputText $candidate
         if (-not [string]::IsNullOrWhiteSpace($candidateAppId)) {
             $shellAppId = $candidateAppId
             break
@@ -257,14 +257,14 @@ function Resolve-LabShortcutPath {
 
 function Get-LabAppUserModelIdFromText {
     param(
-        [string]$Input
+        [string]$InputText
     )
 
-    if ([string]::IsNullOrWhiteSpace($Input)) {
+    if ([string]::IsNullOrWhiteSpace($InputText)) {
         return $null
     }
 
-    $match = [System.Text.RegularExpressions.Regex]::Match($Input, 'shell:appsfolder\\\\(?<app>[^"''\s>]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $match = [System.Text.RegularExpressions.Regex]::Match($InputText, 'shell:appsfolder\\\\(?<app>[^"''\s>]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     if ($match.Success) {
         $value = $match.Groups['app'].Value
         if (-not [string]::IsNullOrWhiteSpace($value)) {
@@ -282,7 +282,7 @@ function Get-LabAppUserModelIdFromShortcut {
     )
 
     foreach ($candidate in @($Arguments, $TargetPath)) {
-        $appId = Get-LabAppUserModelIdFromText -Input $candidate
+        $appId = Get-LabAppUserModelIdFromText -InputText $candidate
         if (-not [string]::IsNullOrWhiteSpace($appId)) {
             return $appId
         }
