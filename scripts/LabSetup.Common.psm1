@@ -425,6 +425,80 @@ function Invoke-Winget {
     }
 }
 
+# Returns the writable directory winget should use for log output.
+function Get-WingetLogRoot {
+    param(
+        [hashtable]$Config
+    )
+
+    $root = $null
+    if ($Config -and -not [string]::IsNullOrWhiteSpace($Config.programDataPath)) {
+        $root = Join-Path -Path $Config.programDataPath -ChildPath 'logs\winget'
+    }
+    else {
+        $root = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
+    }
+
+    New-LabDirectory -Path $root
+    return $root
+}
+
+# Normalizes scope metadata into a retry sequence (user first when explicitly requested).
+function Get-WingetScopeCandidates {
+    param(
+        $ScopeDefinition
+    )
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    if ($ScopeDefinition -is [System.Collections.IEnumerable] -and -not ($ScopeDefinition -is [string])) {
+        foreach ($scopeValue in $ScopeDefinition) {
+            if ([string]::IsNullOrWhiteSpace($scopeValue)) { continue }
+            $normalized = $scopeValue.Trim().ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace($normalized)) {
+                [void]$candidates.Add($normalized)
+            }
+        }
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($ScopeDefinition)) {
+        [void]$candidates.Add($ScopeDefinition.Trim().ToLowerInvariant())
+    }
+
+    if ($candidates.Count -eq 0) {
+        [void]$candidates.Add('machine')
+    }
+    elseif ($candidates.Contains('user') -and -not $candidates.Contains('machine')) {
+        [void]$candidates.Add('machine')
+    }
+
+    return @($candidates | Select-Object -Unique)
+}
+
+# Describes the install-mode attempts winget should take for a package.
+function Get-WingetInstallAttempts {
+    param(
+        [switch]$PreferSilent
+    )
+
+    $attempts = New-Object System.Collections.Generic.List[hashtable]
+
+    if ($PreferSilent) {
+        [void]$attempts.Add(@{
+            Name      = 'silent'
+            ExtraArgs = @('--silent')
+            Message   = 'silent'
+        })
+    }
+
+    [void]$attempts.Add(@{
+        Name      = 'interactive'
+        ExtraArgs = @()
+        Message   = 'interactive'
+    })
+
+    return $attempts.ToArray()
+}
+
 function New-LabDirectory {
     param(
         [Parameter(Mandatory)]
@@ -991,13 +1065,7 @@ function Install-WingetPackage {
     $displayName = $Package.displayName
     $sanitizedId = ($id -replace '[^A-Za-z0-9_.-]', '_')
 
-    $wingetLogRoot = $null
-    if ($Config -and $Config.programDataPath) {
-        $wingetLogRoot = Join-Path -Path $Config.programDataPath -ChildPath 'logs\winget'
-    } else {
-        $wingetLogRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
-    }
-    New-LabDirectory -Path $wingetLogRoot
+    $wingetLogRoot = Get-WingetLogRoot -Config $Config
 
     $alwaysInstall = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'alwaysInstall')
     $skipUpgradePrecheck = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'skipUpgradePrecheck')
@@ -1018,10 +1086,6 @@ function Install-WingetPackage {
         '--accept-source-agreements'
     )
 
-    $scope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
-    if ([string]::IsNullOrWhiteSpace($scope)) {
-        $scope = 'machine'
-    }
     $declaredVersion = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'version'
     if ($declaredVersion) {
         $baseArgs += @('--version', $declaredVersion)
@@ -1032,27 +1096,8 @@ function Install-WingetPackage {
         $baseArgs += @('--override', $overrideArgs)
     }
 
-    $scopeCandidates = @()
     $requestedScope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
-    if ($requestedScope -is [System.Collections.IEnumerable] -and -not ($requestedScope -is [string])) {
-        foreach ($scopeValue in $requestedScope) {
-            if (-not [string]::IsNullOrWhiteSpace($scopeValue)) {
-                $scopeCandidates += $scopeValue.ToLowerInvariant()
-            }
-        }
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($requestedScope)) {
-        $scopeCandidates += $requestedScope.ToLowerInvariant()
-    }
-
-    if (-not $scopeCandidates -or $scopeCandidates.Count -eq 0) {
-        $scopeCandidates = @('machine')
-    }
-    elseif (($scopeCandidates -contains 'user') -and -not ($scopeCandidates -contains 'machine')) {
-        # Favor per-user installs when requested, but fail over to machine installers if user scope is unavailable.
-        $scopeCandidates += 'machine'
-    }
-    $scopeCandidates = @($scopeCandidates | Select-Object -Unique)
+    $scopeCandidates = Get-WingetScopeCandidates -ScopeDefinition $requestedScope
 
     $expectedExitCodes = @(
         $script:WingetExitCodes.UpdateNotApplicable,
@@ -1064,19 +1109,7 @@ function Install-WingetPackage {
     )
 
     $silentFlag = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent')
-    $installAttempts = @()
-    if ($silentFlag) {
-        $installAttempts += @{
-            Name      = 'silent'
-            ExtraArgs = @('--silent')
-            Message   = 'silent'
-        }
-    }
-    $installAttempts += @{
-        Name      = 'interactive'
-        ExtraArgs = @()
-        Message   = 'interactive'
-    }
+    $installAttempts = Get-WingetInstallAttempts -PreferSilent:$silentFlag
 
     Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
 
@@ -1403,6 +1436,164 @@ function Get-OrderedTaskbarCandidates {
     )
 }
 
+# Locates or creates a Start Menu shortcut that can be used for taskbar automation.
+function Resolve-LabShortcutPath {
+    param(
+        [string]$PreferredName,
+        [string]$DisplayName,
+        [string[]]$CandidatePaths = @(),
+        [ValidateSet('Never', 'WhenMissing', 'Always')]
+        [string]$CreationPolicy = 'WhenMissing',
+        [hashtable]$Config,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    if ($CreationPolicy -ne 'Always') {
+        $names = New-Object System.Collections.Generic.List[string]
+        if (-not [string]::IsNullOrWhiteSpace($PreferredName)) {
+            [void]$names.Add($PreferredName)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($DisplayName) -and -not $names.Contains($DisplayName)) {
+            [void]$names.Add($DisplayName)
+        }
+
+        foreach ($name in $names) {
+            $existing = Get-StartMenuShortcutPath -ShortcutName $name
+            if ($existing) {
+                return $existing
+            }
+        }
+    }
+
+    if ($CreationPolicy -eq 'Never' -or -not $CandidatePaths -or $CandidatePaths.Count -eq 0) {
+        return $null
+    }
+
+    $target = Resolve-ExecutableFromCandidates -Candidates $CandidatePaths
+    if (-not $target) {
+        if ($LogWriter) {
+            Write-LabLog -Message "Unable to resolve shortcut target for $DisplayName while processing taskbar metadata." -LogWriter $LogWriter
+        }
+        return $null
+    }
+
+    $shortcutLabel = if (-not [string]::IsNullOrWhiteSpace($PreferredName)) {
+        $PreferredName
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($DisplayName)) {
+        $DisplayName
+    }
+    else {
+        'LabShortcut'
+    }
+
+    return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $target -Config $Config
+}
+
+# Normalizes taskbar pin metadata for a package so downstream functions can reason about it consistently.
+function Get-LabTaskbarPinRequest {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Package,
+        [Parameter(Mandatory)]
+        [hashtable]$Config,
+        [ValidateSet('Pin', 'Layout')]
+        [string]$Mode = 'Pin',
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    $displayName = $Package.displayName
+    if ([string]::IsNullOrWhiteSpace($displayName)) {
+        $displayName = $Package.id
+    }
+
+    if ([string]::IsNullOrWhiteSpace($displayName)) {
+        if ($LogWriter) {
+            Write-LabLog -Message 'Skipping taskbar pin metadata without a display name or id.' -LogWriter $LogWriter
+        }
+        return $null
+    }
+
+    $appId = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'appUserModelId'
+
+    $candidatePaths = @()
+    if ($Package.ContainsKey('taskbarTargets') -and $Package['taskbarTargets']) {
+        $candidatePaths = @($Package['taskbarTargets'] | ForEach-Object { $_ })
+    }
+    if ($candidatePaths.Count -gt 1) {
+        $candidatePaths = Get-OrderedTaskbarCandidates -Paths $candidatePaths
+    }
+
+    $shortcutName = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'taskbarShortcutName'
+    if ([string]::IsNullOrWhiteSpace($shortcutName)) {
+        $shortcutName = $displayName
+    }
+
+    $forceShortcut = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'taskbarForceShortcut')
+    if (-not $forceShortcut -and $candidatePaths.Count -gt 0) {
+        foreach ($candidate in $candidatePaths) {
+            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+            $extension = $null
+            try {
+                $extension = [System.IO.Path]::GetExtension($candidate)
+            }
+            catch {
+                $extension = $null
+            }
+            if ([string]::IsNullOrWhiteSpace($extension)) {
+                $forceShortcut = $true
+                break
+            }
+            $normalizedExtension = $extension.ToLowerInvariant()
+            if ($normalizedExtension -notin @('.exe', '.lnk', '.appref-ms', '.url', '.msix', '.msixbundle', '.appx', '.appxbundle')) {
+                $forceShortcut = $true
+                break
+            }
+        }
+    }
+
+    $creationPolicy = switch ($Mode) {
+        'Pin'    { if ($forceShortcut) { 'Always' } else { 'Never' } }
+        default  { 'WhenMissing' }
+    }
+
+    $shortcutPath = Resolve-LabShortcutPath -PreferredName $shortcutName -DisplayName $displayName -CandidatePaths $candidatePaths -CreationPolicy $creationPolicy -Config $Config -LogWriter $LogWriter
+
+    if ($Mode -eq 'Pin' -and $forceShortcut -and -not $shortcutPath -and $LogWriter) {
+        Write-LabLog -Message "taskbarForceShortcut was set for $displayName but no shortcut could be generated." -LogWriter $LogWriter
+    }
+
+    if ($shortcutPath) {
+        try {
+            $shortcutName = Split-Path -Path $shortcutPath -Leaf
+        }
+        catch {
+            # Reuse the original name if the leaf cannot be determined.
+        }
+    }
+
+    $orderedCandidates = New-Object System.Collections.Generic.List[string]
+    $dedupe = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($path in @($shortcutPath) + $candidatePaths) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        if ($dedupe.Add($path)) {
+            [void]$orderedCandidates.Add($path)
+        }
+    }
+
+    return [pscustomobject]@{
+        Package        = $Package
+        DisplayName    = $displayName
+        AppId          = $appId
+        CandidatePaths = $orderedCandidates.ToArray()
+        ShortcutName   = $shortcutName
+        ShortcutPath   = $shortcutPath
+        ForceShortcut  = $forceShortcut
+        Mode           = $Mode
+    }
+}
+
 function Set-LabTaskbarPins {
     param(
         [Parameter(Mandatory)]
@@ -1410,8 +1601,8 @@ function Set-LabTaskbarPins {
         [System.IO.StreamWriter]$LogWriter
     )
 
-    $packagesToPin = @()
-    $failedPins = New-Object System.Collections.Generic.List[hashtable]
+    $pinRequests = New-Object System.Collections.Generic.List[pscustomobject]
+    $failedPinCount = 0
 
     foreach ($package in $Config.wingetPackages) {
         $pinToTaskbar = $false
@@ -1421,82 +1612,30 @@ function Set-LabTaskbarPins {
 
         if (-not $pinToTaskbar) { continue }
 
-        $packagesToPin += ,$package
+        $pinRequest = Get-LabTaskbarPinRequest -Package $package -Config $Config -Mode 'Pin' -LogWriter $LogWriter
+        if (-not $pinRequest) { continue }
 
-        $candidatePaths = @()
-        if ($package.ContainsKey('taskbarTargets') -and $package['taskbarTargets']) {
-            $candidatePaths = @($package['taskbarTargets'] | ForEach-Object { $_ })
-        }
-
-        if ($candidatePaths.Count -gt 1) {
-            $candidatePaths = Get-OrderedTaskbarCandidates -Paths $candidatePaths
-        }
-
-        $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
-        $forceShortcut = [bool](Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarForceShortcut')
-        if (-not $forceShortcut -and $candidatePaths.Count -gt 0) {
-            foreach ($candidate in $candidatePaths) {
-                if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-                $extension = $null
-                try {
-                    $extension = [System.IO.Path]::GetExtension($candidate)
-                }
-                catch {
-                    $extension = $null
-                }
-                if ([string]::IsNullOrWhiteSpace($extension)) {
-                    $forceShortcut = $true
-                    break
-                }
-                $normalizedExtension = $extension.ToLowerInvariant()
-                if ($normalizedExtension -notin @('.exe', '.lnk', '.appref-ms', '.url', '.msix', '.msixbundle', '.appx', '.appxbundle')) {
-                    $forceShortcut = $true
-                    break
-                }
-            }
-        }
-
-        if ($forceShortcut -and $candidatePaths.Count -gt 0) {
-            $shortcutTarget = Resolve-ExecutableFromCandidates -Candidates $candidatePaths
-            if ($shortcutTarget) {
-                $shortcutLabel = if (-not [string]::IsNullOrWhiteSpace($shortcutName)) { $shortcutName } else { $package.displayName }
-                $shortcutPath = New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $shortcutTarget -Config $Config
-                if ($shortcutPath) {
-                    $candidatePaths = @($shortcutPath) + $candidatePaths
-                    try {
-                        $shortcutName = Split-Path -Path $shortcutPath -Leaf
-                    }
-                    catch {
-                        $shortcutName = $shortcutLabel
-                    }
-                }
-            }
-        }
-
-        $appId = $null
-        if ($package.ContainsKey('appUserModelId')) {
-            $appId = $package['appUserModelId']
-        }
+        [void]$pinRequests.Add($pinRequest)
 
         $pinSucceeded = $false
         try {
-            $pinSucceeded = Set-TaskbarPin -DisplayName $package.displayName -Config $Config -CandidatePaths $candidatePaths -AppId $appId -ShortcutName $shortcutName -LogWriter $LogWriter
+            $pinSucceeded = Set-TaskbarPin -DisplayName $pinRequest.DisplayName -Config $Config -CandidatePaths $pinRequest.CandidatePaths -AppId $pinRequest.AppId -ShortcutName $pinRequest.ShortcutName -LogWriter $LogWriter
         }
         catch {
             $pinSucceeded = $false
             if ($LogWriter) {
-                Write-LabLog -Message "Taskbar pin attempt for $($package.displayName) threw an exception: $($_.Exception.Message)" -LogWriter $LogWriter
+                Write-LabLog -Message "Taskbar pin attempt for $($pinRequest.DisplayName) threw an exception: $($_.Exception.Message)" -LogWriter $LogWriter
             }
         }
 
         if (-not $pinSucceeded) {
-            [void]$failedPins.Add($package)
+            $failedPinCount++
         }
     }
 
-    if ($failedPins.Count -gt 0 -and $packagesToPin.Count -gt 0) {
-        Write-LabLog -Message ("{0} taskbar pin attempts failed; generating fallback layout." -f $failedPins.Count) -LogWriter $LogWriter
-        $layoutApplied = Set-LabTaskbarLayout -Config $Config -Packages $packagesToPin -LogWriter $LogWriter
+    if ($failedPinCount -gt 0 -and $pinRequests.Count -gt 0) {
+        Write-LabLog -Message ("{0} taskbar pin attempts failed; generating fallback layout." -f $failedPinCount) -LogWriter $LogWriter
+        $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $pinRequests.ToArray() -LogWriter $LogWriter
         if ($layoutApplied) {
             Write-LabLog -Message 'Applied LayoutModification fallback and reset Explorer to enforce taskbar pins.' -LogWriter $LogWriter
         }
@@ -1601,7 +1740,7 @@ function New-LabTaskbarShortcut {
 function Get-LabTaskbarLayoutEntries {
     param(
         [Parameter(Mandatory)]
-        [hashtable[]]$Packages,
+        [pscustomobject[]]$TaskbarRequests,
         [Parameter(Mandatory)]
         [hashtable]$Config,
         [System.IO.StreamWriter]$LogWriter
@@ -1609,9 +1748,11 @@ function Get-LabTaskbarLayoutEntries {
 
     $entries = New-Object System.Collections.Generic.List[hashtable]
 
-    foreach ($package in $Packages) {
-        $displayName = $package.displayName
-        $appId = Get-OptionalPropertyValue -InputObject $package -PropertyName 'appUserModelId'
+    foreach ($request in $TaskbarRequests) {
+        if (-not $request) { continue }
+
+        $displayName = $request.DisplayName
+        $appId = $request.AppId
         if (-not [string]::IsNullOrWhiteSpace($appId)) {
             $entryType = if ($appId -match '!.+$' -and $appId -match '_') { 'UWA' } else { 'DesktopAppId' }
             [void]$entries.Add(@{
@@ -1622,24 +1763,11 @@ function Get-LabTaskbarLayoutEntries {
             continue
         }
 
-        $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
-        if ([string]::IsNullOrWhiteSpace($shortcutName)) {
-            $shortcutName = $displayName
-        }
-
-        $shortcutPath = Get-StartMenuShortcutPath -ShortcutName $shortcutName
-
+        $shortcutPath = $request.ShortcutPath
         if (-not $shortcutPath) {
-            $candidatePaths = @()
-            if ($package.ContainsKey('taskbarTargets') -and $package['taskbarTargets']) {
-                $candidatePaths = @($package['taskbarTargets'] | ForEach-Object { $_ })
-            }
-            $resolvedExe = $null
-            if ($candidatePaths.Count -gt 0) {
-                $resolvedExe = Resolve-ExecutableFromCandidates -Candidates $candidatePaths
-            }
-            if ($resolvedExe) {
-                $shortcutPath = New-LabTaskbarShortcut -DisplayName $shortcutName -ExecutablePath $resolvedExe -Config $Config
+            $shortcutPath = Resolve-LabShortcutPath -PreferredName $request.ShortcutName -DisplayName $displayName -CandidatePaths $request.CandidatePaths -CreationPolicy 'WhenMissing' -Config $Config -LogWriter $LogWriter
+            if ($shortcutPath) {
+                $request.ShortcutPath = $shortcutPath
             }
         }
 
@@ -1667,12 +1795,35 @@ function Set-LabTaskbarLayout {
     param(
         [Parameter(Mandatory)]
         [hashtable]$Config,
-        [Parameter(Mandatory)]
         [hashtable[]]$Packages,
+        [pscustomobject[]]$TaskbarRequests,
         [System.IO.StreamWriter]$LogWriter
     )
 
-    $entries = Get-LabTaskbarLayoutEntries -Packages $Packages -Config $Config -LogWriter $LogWriter
+    if (-not $TaskbarRequests -and $Packages) {
+        $resolvedRequests = New-Object System.Collections.Generic.List[pscustomobject]
+        foreach ($package in $Packages) {
+            $request = Get-LabTaskbarPinRequest -Package $package -Config $Config -Mode 'Layout' -LogWriter $LogWriter
+            if ($request) {
+                [void]$resolvedRequests.Add($request)
+            }
+        }
+        $TaskbarRequests = $resolvedRequests.ToArray()
+    }
+
+    if (-not $TaskbarRequests -and -not $Packages) {
+        return $false
+    }
+
+    if ($TaskbarRequests) {
+        $TaskbarRequests = @($TaskbarRequests | Where-Object { $_ })
+    }
+
+    if (-not $TaskbarRequests -or $TaskbarRequests.Count -eq 0) {
+        return $false
+    }
+
+    $entries = Get-LabTaskbarLayoutEntries -TaskbarRequests $TaskbarRequests -Config $Config -LogWriter $LogWriter
     if ($entries.Count -eq 0) {
         return $false
     }
