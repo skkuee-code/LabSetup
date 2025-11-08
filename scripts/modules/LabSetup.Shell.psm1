@@ -264,6 +264,23 @@ function Test-LabTaskbarPinnedState {
         if (Test-LabTaskbarPinnedAppId -AppId $AppId) {
             return $true
         }
+        $existingPinsCommand = Get-Command -Name 'Get-LabExistingTaskbarPins' -ErrorAction SilentlyContinue
+        if ($existingPinsCommand) {
+            try {
+                $existingPins = Get-LabExistingTaskbarPins -LogWriter $null
+                foreach ($pin in $existingPins) {
+                    if (-not $pin) { continue }
+                    $candidateAppId = $pin.AppId
+                    if (-not [string]::IsNullOrWhiteSpace($candidateAppId) -and
+                        $candidateAppId.Equals($AppId, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        return $true
+                    }
+                }
+            }
+            catch {
+                # Ignore failures when enumerating existing pins.
+            }
+        }
     }
 
     $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName

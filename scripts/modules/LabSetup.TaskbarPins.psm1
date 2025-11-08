@@ -1,3 +1,5 @@
+$script:LabAppxIconCache = @{}
+
 function Set-TaskbarPin {
     param(
         [Parameter(Mandatory)]
@@ -142,6 +144,123 @@ function Get-OrderedTaskbarCandidates {
     )
 }
 
+function Get-LabAppxShortcutIcon {
+    param(
+        [string]$AppId,
+        [hashtable]$Config,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    if ([string]::IsNullOrWhiteSpace($AppId)) {
+        return $null
+    }
+    if ($AppId -notmatch '!') {
+        return $null
+    }
+
+    if ($script:LabAppxIconCache.ContainsKey($AppId)) {
+        return $script:LabAppxIconCache[$AppId]
+    }
+
+    $packageFamily = $AppId.Split('!')[0]
+    if ([string]::IsNullOrWhiteSpace($packageFamily)) {
+        $script:LabAppxIconCache[$AppId] = $null
+        return $null
+    }
+
+    $package = $null
+    $packageName = $null
+    $separatorIndex = $packageFamily.LastIndexOf('_')
+    if ($separatorIndex -gt 0 -and $separatorIndex -lt ($packageFamily.Length - 1)) {
+        $packageName = $packageFamily.Substring(0, $separatorIndex)
+    }
+
+    if ($packageName) {
+        try {
+            $candidates = Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue
+            if ($candidates) {
+                $package = ($candidates | Where-Object { $_.PackageFamilyName -eq $packageFamily } | Select-Object -First 1)
+            }
+        }
+        catch {
+            $package = $null
+        }
+    }
+
+    if (-not $package) {
+        try {
+            $package = Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { $_.PackageFamilyName -eq $packageFamily } | Select-Object -First 1
+        }
+        catch {
+            $package = $null
+        }
+    }
+
+    if (-not $package) {
+        if ($LogWriter) {
+            Write-LabLog -Message ("Unable to locate AppX package for {0}; ensure the application is installed." -f $AppId) -LogWriter $LogWriter
+        }
+        $script:LabAppxIconCache[$AppId] = $null
+        return $null
+    }
+
+    $installLocation = $package.InstallLocation
+    if ([string]::IsNullOrWhiteSpace($installLocation) -or -not (Test-Path -LiteralPath $installLocation -PathType Container)) {
+        $script:LabAppxIconCache[$AppId] = $null
+        return $null
+    }
+
+    $searchRoots = @(
+        (Join-Path -Path $installLocation -ChildPath 'Images'),
+        (Join-Path -Path $installLocation -ChildPath 'Assets'),
+        $installLocation
+    )
+
+    $iconSource = $null
+    foreach ($root in $searchRoots) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        try {
+            $icons = Get-ChildItem -LiteralPath $root -Filter '*.ico' -Recurse -ErrorAction SilentlyContinue
+        }
+        catch {
+            $icons = @()
+        }
+
+        if ($icons -and $icons.Count -gt 0) {
+            $iconSource = ($icons | Sort-Object Length -Descending | Select-Object -First 1)
+            if ($iconSource) { break }
+        }
+    }
+
+    if (-not $iconSource) {
+        $script:LabAppxIconCache[$AppId] = $null
+        return $null
+    }
+
+    $iconPath = $iconSource.FullName
+    if ($Config -and $Config.programDataPath) {
+        $iconRoot = Join-Path -Path $Config.programDataPath -ChildPath 'TaskbarIcons'
+        try {
+            New-LabDirectory -Path $iconRoot
+            $safeName = ($package.PackageFullName -replace '[^A-Za-z0-9._-]', '_')
+            if ([string]::IsNullOrWhiteSpace($safeName)) {
+                $safeName = 'AppxIcon'
+            }
+            $destination = Join-Path -Path $iconRoot -ChildPath ("{0}.ico" -f $safeName)
+            Copy-Item -LiteralPath $iconPath -Destination $destination -Force
+            $iconPath = $destination
+        }
+        catch {
+            if ($LogWriter) {
+                Write-LabLog -Message ("Unable to cache icon for {0}: {1}" -f $AppId, $_.Exception.Message) -LogWriter $LogWriter
+            }
+        }
+    }
+
+    $script:LabAppxIconCache[$AppId] = $iconPath
+    return $iconPath
+}
+
 function Resolve-LabShortcutPath {
     param(
         [string]$PreferredName,
@@ -232,8 +351,8 @@ function Resolve-LabShortcutPath {
         $nonShellCandidates = @(
             $normalizedCandidates | Where-Object { $_ -notmatch '(?i)^shell:appsfolder\\' }
         )
-        $iconPath = $null
-        if ($nonShellCandidates -and $nonShellCandidates.Count -gt 0) {
+        $iconPath = Get-LabAppxShortcutIcon -AppId $effectiveAppId -Config $Config -LogWriter $LogWriter
+        if (-not $iconPath -and $nonShellCandidates -and $nonShellCandidates.Count -gt 0) {
             $iconPath = Resolve-ExecutableFromCandidates -Candidates $nonShellCandidates
         }
         if (-not $iconPath) {
@@ -264,15 +383,33 @@ function Get-LabAppUserModelIdFromText {
         return $null
     }
 
-    $match = [System.Text.RegularExpressions.Regex]::Match($InputText, 'shell:appsfolder\\\\(?<app>[^"''\s>]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    if ($match.Success) {
-        $value = $match.Groups['app'].Value
-        if (-not [string]::IsNullOrWhiteSpace($value)) {
-            return $value.Trim('"', "'")
+    $prefix = 'shell:appsfolder\'
+    $startIndex = $InputText.IndexOf($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($startIndex -lt 0) {
+        return $null
+    }
+
+    $startIndex += $prefix.Length
+    if ($startIndex -ge $InputText.Length) {
+        return $null
+    }
+
+    $remaining = $InputText.Substring($startIndex)
+    $terminators = @('"', "'", ' ', "`t", "`r", "`n", '>')
+    $endIndex = $remaining.Length
+    foreach ($terminator in $terminators) {
+        $position = $remaining.IndexOf($terminator)
+        if ($position -ge 0 -and $position -lt $endIndex) {
+            $endIndex = $position
         }
     }
 
-    return $null
+    $value = $remaining.Substring(0, $endIndex)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $null
+    }
+
+    return $value.Trim('"', "'")
 }
 
 function Get-LabAppUserModelIdFromShortcut {
