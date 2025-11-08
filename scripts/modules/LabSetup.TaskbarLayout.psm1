@@ -192,7 +192,18 @@ function Set-LabTaskbarLayout {
         return $false
     }
 
-    $entries = Get-LabTaskbarLayoutEntries -TaskbarRequests $TaskbarRequests -Config $Config -LogWriter $LogWriter
+    $rawEntries = Get-LabTaskbarLayoutEntries -TaskbarRequests $TaskbarRequests -Config $Config -LogWriter $LogWriter
+    if (-not $rawEntries -or $rawEntries.Count -eq 0) {
+        return $false
+    }
+
+    $entries = New-Object System.Collections.Generic.List[hashtable]
+    foreach ($entry in $rawEntries) {
+        if ($entry) {
+            [void]$entries.Add($entry)
+        }
+    }
+
     if ($entries.Count -eq 0) {
         return $false
     }
