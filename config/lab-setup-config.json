@@ -105,6 +105,7 @@
     ],
     "volta": {
         "nodeVersion": "lts",
+        "homePath": "%LOCALAPPDATA%\\Volta",
         "globalPackages": [
             "typescript"
         ]

@@ -20,10 +20,69 @@ function Get-VoltaNodeInstallArguments {
     return @('install', "node@$normalized")
 }
 
+function Get-VoltaHomePath {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Config
+    )
+
+    $voltaConfig = Get-OptionalPropertyValue -InputObject $Config -PropertyName 'volta'
+    $configuredHome = Get-OptionalPropertyValue -InputObject $voltaConfig -PropertyName 'homePath'
+    if (-not [string]::IsNullOrWhiteSpace($configuredHome)) {
+        return [Environment]::ExpandEnvironmentVariables($configuredHome.Trim())
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:VOLTA_HOME)) {
+        return $env:VOLTA_HOME
+    }
+
+    $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+    if (-not [string]::IsNullOrWhiteSpace($localAppData)) {
+        return Join-Path -Path $localAppData -ChildPath 'Volta'
+    }
+
+    if ($Config.programDataPath) {
+        return Join-Path -Path $Config.programDataPath -ChildPath 'volta'
+    }
+
+    return Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'Volta'
+}
+
+function Test-SharedVoltaHome {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VoltaHome,
+        [string]$ProgramDataRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VoltaHome) -or [string]::IsNullOrWhiteSpace($ProgramDataRoot)) {
+        return $false
+    }
+
+    try {
+        $homeFull = [System.IO.Path]::GetFullPath($VoltaHome)
+        $rootFull = [System.IO.Path]::GetFullPath($ProgramDataRoot)
+    }
+    catch {
+        return $false
+    }
+
+    $comparison = [System.StringComparison]::OrdinalIgnoreCase
+    $homeNormalized = $homeFull.TrimEnd('\')
+    $rootNormalized = $rootFull.TrimEnd('\')
+    if ($homeNormalized.Equals($rootNormalized, $comparison)) {
+        return $true
+    }
+
+    $rootPrefix = $rootNormalized + [System.IO.Path]::DirectorySeparatorChar
+    return $homeNormalized.StartsWith($rootPrefix, $comparison)
+}
+
 function Initialize-VoltaDirectoryLayout {
     param(
         [Parameter(Mandatory)]
-        [string]$VoltaHome
+        [string]$VoltaHome,
+        [switch]$SharedScope
     )
 
     $required = @(
@@ -40,7 +99,12 @@ function Initialize-VoltaDirectoryLayout {
 
     foreach ($path in $required) {
         if (-not [string]::IsNullOrWhiteSpace($path)) {
-            Set-LabDirectoryWritable -Path $path
+            if ($SharedScope) {
+                Set-LabDirectoryWritable -Path $path
+            }
+            else {
+                New-LabDirectory -Path $path
+            }
         }
     }
 }
@@ -86,7 +150,8 @@ function Reset-VoltaNodeCaches {
     param(
         [Parameter(Mandatory)]
         [string]$VoltaHome,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [switch]$SharedScope
     )
 
     if ([string]::IsNullOrWhiteSpace($VoltaHome)) {
@@ -112,7 +177,12 @@ function Reset-VoltaNodeCaches {
                 Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
-        Set-LabDirectoryWritable -Path $target
+        if ($SharedScope) {
+            Set-LabDirectoryWritable -Path $target
+        }
+        else {
+            New-LabDirectory -Path $target
+        }
     }
 
     $lockFile = Join-Path -Path $VoltaHome -ChildPath 'volta.lock'
@@ -188,13 +258,14 @@ function Repair-VoltaNodeMetadataState {
     param(
         [Parameter(Mandatory)]
         [string]$VoltaHome,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [switch]$SharedScope
     )
 
     if (Test-VoltaNodeMetadataMismatch -VoltaHome $VoltaHome) {
         Write-LabLog -Message 'Detected Volta Node artifacts without npm metadata; resetting caches before continuing.' -LogWriter $LogWriter
-        Reset-VoltaNodeCaches -VoltaHome $VoltaHome -LogWriter $LogWriter
-        Initialize-VoltaDirectoryLayout -VoltaHome $VoltaHome
+        Reset-VoltaNodeCaches -VoltaHome $VoltaHome -LogWriter $LogWriter -SharedScope:$SharedScope
+        Initialize-VoltaDirectoryLayout -VoltaHome $VoltaHome -SharedScope:$SharedScope
     }
 }
 
@@ -338,13 +409,53 @@ function Set-VoltaToolchain {
         return
     }
 
-    $voltaHome = Join-Path -Path $Config.programDataPath -ChildPath 'volta'
-    Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome
-    Repair-VoltaNodeMetadataState -VoltaHome $voltaHome -LogWriter $LogWriter
+    $voltaHome = Get-VoltaHomePath -Config $Config
+    $voltaHomeIsShared = Test-SharedVoltaHome -VoltaHome $voltaHome -ProgramDataRoot $Config.programDataPath
+    $scopeDescription = if ($voltaHomeIsShared) { 'shared across users' } else { 'per-user scope' }
+    Write-LabLog -Message ("Using Volta home path '{0}' ({1})." -f $voltaHome, $scopeDescription) -LogWriter $LogWriter
+
+    Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome -SharedScope:$voltaHomeIsShared
+    Repair-VoltaNodeMetadataState -VoltaHome $voltaHome -LogWriter $LogWriter -SharedScope:$voltaHomeIsShared
     $voltaBin = Join-Path -Path $voltaHome -ChildPath 'bin'
-    Add-MachinePathEntry -Path $voltaBin
+    if ($voltaHomeIsShared) {
+        Add-MachinePathEntry -Path $voltaBin
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($voltaBin)) {
+        $target = $voltaBin.Trim().TrimEnd('\')
+        $existingSegments = @()
+        if ($env:Path) {
+            $existingSegments = $env:Path -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        }
+        $hasSegment = $false
+        foreach ($segment in $existingSegments) {
+            $normalized = $segment.Trim().TrimEnd('\')
+            if ($normalized.Equals($target, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $hasSegment = $true
+                break
+            }
+        }
+
+        if (-not $hasSegment) {
+            if ([string]::IsNullOrWhiteSpace($env:Path)) {
+                $env:Path = $voltaBin
+            }
+            else {
+                $env:Path = "$voltaBin;$($env:Path)"
+            }
+        }
+    }
+
     $env:VOLTA_HOME = $voltaHome
-    [Environment]::SetEnvironmentVariable('VOLTA_HOME', $voltaHome, 'Machine')
+    if ($voltaHomeIsShared) {
+        [Environment]::SetEnvironmentVariable('VOLTA_HOME', $voltaHome, 'Machine')
+    }
+    else {
+        $machineVoltaHome = [Environment]::GetEnvironmentVariable('VOLTA_HOME', 'Machine')
+        if ($machineVoltaHome -and (Test-SharedVoltaHome -VoltaHome $machineVoltaHome -ProgramDataRoot $Config.programDataPath)) {
+            [Environment]::SetEnvironmentVariable('VOLTA_HOME', $null, 'Machine')
+        }
+        [Environment]::SetEnvironmentVariable('VOLTA_HOME', $voltaHome, 'User')
+    }
 
     if ($Config.volta.nodeVersion) {
         $nodeArgs = Get-VoltaNodeInstallArguments -NodeVersion $Config.volta.nodeVersion
@@ -365,8 +476,8 @@ function Set-VoltaToolchain {
             $nodeInstallSucceeded = Test-VoltaInstallResult -Process $nodeProcess -VoltaExe $voltaExe -ExpectedVersion $Config.volta.nodeVersion -LogWriter $LogWriter -ListTarget 'node' -DisplayLabel $nodeDisplayLabel
 
             if (-not $nodeInstallSucceeded -and -not $metadataResetPerformed -and (Test-VoltaDefaultNpmMetadataError -VoltaHome $voltaHome)) {
-                Reset-VoltaNodeCaches -VoltaHome $voltaHome -LogWriter $LogWriter
-                Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome
+                Reset-VoltaNodeCaches -VoltaHome $voltaHome -LogWriter $LogWriter -SharedScope:$voltaHomeIsShared
+                Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome -SharedScope:$voltaHomeIsShared
                 $metadataResetPerformed = $true
             }
         }
