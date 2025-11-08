@@ -1,3 +1,5 @@
+$script:ConvertFromJsonSupportsDepth = $null
+
 function Remove-WindowsTerminalJsonComments {
     param(
         [string]$InputText
@@ -250,8 +252,25 @@ function Set-WindowsTerminalDefaultProfileForPath {
         $sanitized = '{}'
     }
 
+    if ($null -eq $script:ConvertFromJsonSupportsDepth) {
+        try {
+            $convertFromJsonCommand = Get-Command -Name ConvertFrom-Json -ErrorAction Stop
+            $script:ConvertFromJsonSupportsDepth = $convertFromJsonCommand.Parameters.ContainsKey('Depth')
+        }
+        catch {
+            $script:ConvertFromJsonSupportsDepth = $false
+        }
+    }
+
+    $convertFromJsonParameters = @{
+        InputObject = $sanitized
+    }
+    if ($script:ConvertFromJsonSupportsDepth) {
+        $convertFromJsonParameters['Depth'] = 100
+    }
+
     try {
-        $parsed = ConvertFrom-Json -InputObject $sanitized -Depth 100
+        $parsed = ConvertFrom-Json @convertFromJsonParameters
     }
     catch {
         if ($LogWriter) {
@@ -295,11 +314,11 @@ function Set-WindowsTerminalDefaultProfileForPath {
 
     $targetProfile = $null
     if (-not [string]::IsNullOrWhiteSpace($TargetProfileSource)) {
-        foreach ($profile in $profileList) {
-            $sourceValue = Get-OptionalPropertyValue -InputObject $profile -PropertyName 'source'
+        foreach ($profileEntry in $profileList) {
+            $sourceValue = Get-OptionalPropertyValue -InputObject $profileEntry -PropertyName 'source'
             if ([string]::IsNullOrWhiteSpace($sourceValue)) { continue }
             if ($sourceValue.ToString().Trim().Equals($TargetProfileSource.Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
-                $targetProfile = $profile
+                $targetProfile = $profileEntry
                 break
             }
         }
@@ -315,22 +334,22 @@ function Set-WindowsTerminalDefaultProfileForPath {
             }
         }
 
-        foreach ($profile in $profileList) {
-            $profileName = Get-OptionalPropertyValue -InputObject $profile -PropertyName 'name'
+        foreach ($profileEntry in $profileList) {
+            $profileName = Get-OptionalPropertyValue -InputObject $profileEntry -PropertyName 'name'
             if ([string]::IsNullOrWhiteSpace($profileName)) { continue }
             if ($normalizedNames -contains $profileName.Trim().ToLowerInvariant()) {
-                $targetProfile = $profile
+                $targetProfile = $profileEntry
                 break
             }
         }
     }
 
     if (-not $targetProfile) {
-        foreach ($profile in $profileList) {
-            $commandline = Get-OptionalPropertyValue -InputObject $profile -PropertyName 'commandline'
+        foreach ($profileEntry in $profileList) {
+            $commandline = Get-OptionalPropertyValue -InputObject $profileEntry -PropertyName 'commandline'
             if ([string]::IsNullOrWhiteSpace($commandline)) { continue }
             if ($commandline.ToLowerInvariant().Contains('pwsh')) {
-                $targetProfile = $profile
+                $targetProfile = $profileEntry
                 break
             }
         }

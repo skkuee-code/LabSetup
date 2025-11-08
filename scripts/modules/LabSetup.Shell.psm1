@@ -128,6 +128,43 @@ function Get-LabTaskbarShellItems {
     return $items.ToArray()
 }
 
+function Get-LabTaskbarFavoritesText {
+    $taskbandKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband'
+    try {
+        if (-not (Test-Path -LiteralPath $taskbandKey -PathType Container)) {
+            return $null
+        }
+
+        $favoritesValue = Get-ItemProperty -LiteralPath $taskbandKey -Name 'Favorites' -ErrorAction Stop
+        $favoritesBytes = $favoritesValue.Favorites
+        if (-not ($favoritesBytes -is [byte[]]) -or $favoritesBytes.Length -eq 0) {
+            return $null
+        }
+
+        return [System.Text.Encoding]::Unicode.GetString($favoritesBytes)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-LabTaskbarPinnedAppId {
+    param(
+        [string]$AppId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($AppId)) {
+        return $false
+    }
+
+    $favoritesText = Get-LabTaskbarFavoritesText
+    if ([string]::IsNullOrWhiteSpace($favoritesText)) {
+        return $false
+    }
+
+    return ($favoritesText.IndexOf($AppId, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
 function Invoke-TaskbarVerb {
     param(
         [Parameter(Mandatory)]
@@ -208,6 +245,12 @@ function Test-LabTaskbarPinnedState {
         [string]$ShortcutName,
         [string]$DisplayName
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($AppId)) {
+        if (Test-LabTaskbarPinnedAppId -AppId $AppId) {
+            return $true
+        }
+    }
 
     $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
     $shellItemList = New-Object System.Collections.Generic.List[object]
