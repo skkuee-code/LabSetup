@@ -548,11 +548,32 @@ function Reset-LabTaskbarLayoutState {
 
     Start-Sleep -Seconds 2
     if ($explorerWasRunning) {
+        $explorerActive = $false
         try {
-            Start-Process -FilePath (Join-Path -Path $env:SystemRoot -ChildPath 'explorer.exe') | Out-Null
+            $explorerActive = @(Get-Process -Name explorer -ErrorAction SilentlyContinue).Count -gt 0
         }
         catch {
-            # If Explorer cannot restart, allow the parent shell to continue.
+            $explorerActive = $false
+        }
+
+        if ($explorerActive) {
+            if ($LogWriter) {
+                Write-LabLog -Message 'Explorer restarted automatically; manual relaunch skipped.' -LogWriter $LogWriter
+            }
+        }
+        else {
+            try {
+                $explorerPath = Join-Path -Path $env:SystemRoot -ChildPath 'explorer.exe'
+                Start-Process -FilePath $explorerPath | Out-Null
+                if ($LogWriter) {
+                    Write-LabLog -Message 'Explorer relaunched manually to enforce taskbar layout changes.' -LogWriter $LogWriter
+                }
+            }
+            catch {
+                if ($LogWriter) {
+                    Write-LabLog -Message ('Unable to relaunch Explorer after layout reset: {0}' -f $_.Exception.Message) -LogWriter $LogWriter
+                }
+            }
         }
     }
     elseif ($LogWriter) {
