@@ -171,7 +171,7 @@ function ConvertTo-WindowsTerminalGuidString {
     $trimmed = $trimmed.Trim()
     $normalized = $trimmed.Trim('{}')
 
-    $parsed = $null
+    [guid]$parsed = [guid]::Empty
     if ([guid]::TryParse($normalized, [ref]$parsed)) {
         return ("{0:B}" -f $parsed)
     }
