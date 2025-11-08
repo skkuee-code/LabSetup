@@ -1806,8 +1806,21 @@ function Set-MikTexConfiguration {
     }
     $mpmCandidates += 'mpm'
 
+    $miktexExeCandidates = @()
+    if ($env:ProgramFiles) {
+        $miktexExeCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\x64\miktex.exe'
+        $miktexExeCandidates += Join-Path -Path ${env:ProgramFiles} -ChildPath 'MiKTeX\miktex\bin\miktex.exe'
+    }
+
+    if ($programFilesX86) {
+        $miktexExeCandidates += Join-Path -Path $programFilesX86 -ChildPath 'MiKTeX\miktex\bin\x64\miktex.exe'
+        $miktexExeCandidates += Join-Path -Path $programFilesX86 -ChildPath 'MiKTeX\miktex\bin\miktex.exe'
+    }
+    $miktexExeCandidates += 'miktex'
+
     $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
     $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
+    $miktexExe = Resolve-ExecutableFromCandidates -Candidates $miktexExeCandidates
 
     if (-not $initexmf -or -not $mpmExe) {
         $miktexPackageId = Get-OptionalPropertyValue -InputObject $Config.tex -PropertyName 'packageId'
@@ -1818,6 +1831,7 @@ function Set-MikTexConfiguration {
             Install-WingetPackage -Package $miktexPackage -LogWriter $LogWriter -Config $Config
             $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
             $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
+            $miktexExe = Resolve-ExecutableFromCandidates -Candidates $miktexExeCandidates
         }
     }
 
@@ -1826,6 +1840,7 @@ function Set-MikTexConfiguration {
         if ($installedWithBootstrap) {
             $initexmf = Resolve-ExecutableFromCandidates -Candidates $initexmfCandidates
             $mpmExe = Resolve-ExecutableFromCandidates -Candidates $mpmCandidates
+            $miktexExe = Resolve-ExecutableFromCandidates -Candidates $miktexExeCandidates
         }
     }
 
@@ -1860,13 +1875,53 @@ function Set-MikTexConfiguration {
     }
 
     if ($Config.tex.refreshFileDatabase) {
-        Write-LabLog -Message 'Refreshing MiKTeX filename database (admin)...' -LogWriter $LogWriter
-        $refreshProcess = Invoke-ProcessWithSpinner -FilePath $initexmf -ArgumentList @('--admin', '--update-fndb') -Activity 'Refreshing MiKTeX filename database (admin)...'
-        if ($refreshProcess.ExitCode -ne 0) {
+        $refreshActivity = 'Refreshing MiKTeX filename database (admin)...'
+        $attempt = 0
+        $maxAttempts = 2
+        $fndbRefreshed = $false
+        $lastExitCode = $null
+
+        while (-not $fndbRefreshed -and $attempt -lt $maxAttempts) {
+            $attempt++
+            if ($attempt -gt 1) {
+                Write-LabLog -Message ("Retrying MiKTeX FNDB refresh (attempt {0} of {1})..." -f $attempt, $maxAttempts) -LogWriter $LogWriter
+            }
+            else {
+                Write-LabLog -Message $refreshActivity -LogWriter $LogWriter
+            }
+
+            $refreshProcess = Invoke-ProcessWithSpinner -FilePath $initexmf -ArgumentList @('--admin', '--update-fndb') -Activity $refreshActivity
+            $lastExitCode = Get-LabProcessExitCode -Process $refreshProcess
+            if ($lastExitCode -eq 0) {
+                $fndbRefreshed = $true
+                break
+            }
+
+            $exitDisplay = if ($null -eq $lastExitCode) { 'unknown' } else { $lastExitCode }
+            Write-LabLog -Message ("initexmf exit code {0} while refreshing the MiKTeX FNDB." -f $exitDisplay) -LogWriter $LogWriter
+
+            if ($miktexExe) {
+                $fallbackActivity = 'Refreshing MiKTeX filename database via miktex (admin)...'
+                $fallbackProcess = Invoke-ProcessWithSpinner -FilePath $miktexExe -ArgumentList @('--admin', 'fndb', 'refresh') -Activity $fallbackActivity
+                $fallbackExitCode = Get-LabProcessExitCode -Process $fallbackProcess
+                if ($fallbackExitCode -eq 0) {
+                    Write-LabLog -Message 'miktex fndb refresh succeeded after initexmf failure; continuing.' -LogWriter $LogWriter
+                    $fndbRefreshed = $true
+                    break
+                }
+
+                $fallbackDisplay = if ($null -eq $fallbackExitCode) { 'unknown' } else { $fallbackExitCode }
+                Write-LabLog -Message ("miktex exit code {0} while attempting FNDB refresh fallback." -f $fallbackDisplay) -LogWriter $LogWriter
+            }
+            else {
+                Write-LabLog -Message 'miktex executable not found; unable to attempt FNDB refresh fallback.' -LogWriter $LogWriter
+            }
+        }
+
+        if (-not $fndbRefreshed) {
             throw 'initexmf failed to refresh the MiKTeX FNDB.'
         }
     }
 }
 
 Export-ModuleMember -Function *-*
-
