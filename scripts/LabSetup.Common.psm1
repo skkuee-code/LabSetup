@@ -15,13 +15,17 @@ $script:LabSetupModuleSegments = @(
     'modules\LabSetup.Miktex.psm1'
 )
 
+$script:ImportedLabSetupModules = @()
 foreach ($segment in $script:LabSetupModuleSegments) {
     $segmentPath = Join-Path -Path $PSScriptRoot -ChildPath $segment
     if (-not (Test-Path -LiteralPath $segmentPath -PathType Leaf)) {
         throw "Unable to locate module segment: $segment"
     }
 
-    . $segmentPath
+    $module = Import-Module -Name $segmentPath -Scope Local -Force -PassThru -DisableNameChecking -Verbose:$false
+    if ($null -ne $module) {
+        $script:ImportedLabSetupModules += $module
+    }
 }
 
 $LabSetupExportedFunctions = @(

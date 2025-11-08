@@ -21,7 +21,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $commonModule = Join-Path -Path $PSScriptRoot -ChildPath 'LabSetup.Common.psm1'
-Import-Module -Name $commonModule -Force
+Import-Module -Name $commonModule -Force -Verbose:$false
 
 function Test-LabSetupModuleAvailability {
     param(
@@ -55,7 +55,7 @@ function Test-LabSetupModuleAvailability {
     }
 
     try {
-        Import-Module -Name $ModulePath -Force -ErrorAction Stop | Out-Null
+        Import-Module -Name $ModulePath -Force -ErrorAction Stop -Verbose:$false | Out-Null
     }
     catch {
         $errorMessage = $_.Exception.Message
@@ -66,7 +66,7 @@ function Test-LabSetupModuleAvailability {
     }
 
     if ($RestoreModulePath) {
-        Import-Module -Name $RestoreModulePath -Force -ErrorAction Stop | Out-Null
+        Import-Module -Name $RestoreModulePath -Force -ErrorAction Stop -Verbose:$false | Out-Null
     }
 }
 
