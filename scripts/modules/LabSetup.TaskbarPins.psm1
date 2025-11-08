@@ -195,6 +195,234 @@ function Resolve-LabShortcutPath {
     return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $target -Config $Config
 }
 
+function Get-LabAppUserModelIdFromText {
+    param(
+        [string]$Input
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Input)) {
+        return $null
+    }
+
+    $match = [System.Text.RegularExpressions.Regex]::Match($Input, 'shell:appsfolder\\(?<app>[^"''\s>]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($match.Success) {
+        $value = $match.Groups['app'].Value
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value.Trim('"', "'")
+        }
+    }
+
+    return $null
+}
+
+function Get-LabAppUserModelIdFromShortcut {
+    param(
+        [string]$TargetPath,
+        [string]$Arguments
+    )
+
+    foreach ($candidate in @($Arguments, $TargetPath)) {
+        $appId = Get-LabAppUserModelIdFromText -Input $candidate
+        if (-not [string]::IsNullOrWhiteSpace($appId)) {
+            return $appId
+        }
+    }
+
+    return $null
+}
+
+function Get-LabExistingTaskbarPins {
+    param(
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    $results = New-Object System.Collections.Generic.List[pscustomobject]
+    $appData = $env:APPDATA
+    if ([string]::IsNullOrWhiteSpace($appData)) {
+        return $results.ToArray()
+    }
+
+    $pinnedRoot = Join-Path -Path $appData -ChildPath 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar'
+    if (-not (Test-Path -LiteralPath $pinnedRoot -PathType Container)) {
+        return $results.ToArray()
+    }
+
+    try {
+        $shortcuts = Get-ChildItem -Path $pinnedRoot -File -ErrorAction Stop
+    }
+    catch {
+        if ($LogWriter) {
+            Write-LabLog -Message ("Unable to inspect existing taskbar pins: {0}" -f $_.Exception.Message) -LogWriter $LogWriter
+        }
+        return $results.ToArray()
+    }
+
+    if (-not $shortcuts -or $shortcuts.Count -eq 0) {
+        return $results.ToArray()
+    }
+
+    $wscript = $null
+    try {
+        $wscript = New-Object -ComObject WScript.Shell
+    }
+    catch {
+        $wscript = $null
+        if ($LogWriter) {
+            Write-LabLog -Message ("Unable to read shortcut metadata while preserving taskbar pins: {0}" -f $_.Exception.Message) -LogWriter $LogWriter
+        }
+    }
+
+    foreach ($shortcut in $shortcuts) {
+        if (-not $shortcut) { continue }
+
+        $candidatePaths = New-Object System.Collections.Generic.List[string]
+        $dedupe = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+        $displayName = $shortcut.BaseName
+        if ([string]::IsNullOrWhiteSpace($displayName)) {
+            $displayName = [System.IO.Path]::GetFileNameWithoutExtension($shortcut.Name)
+        }
+
+        $pathsToAdd = New-Object System.Collections.Generic.List[string]
+        $pathsToAdd.Add($shortcut.FullName)
+
+        $targetPath = $null
+        $arguments = $null
+        if ($wscript) {
+            $shortcutCom = $null
+            try {
+                $shortcutCom = $wscript.CreateShortcut($shortcut.FullName)
+                $targetPath = $shortcutCom.TargetPath
+                $arguments = $shortcutCom.Arguments
+            }
+            catch {
+                $targetPath = $null
+                $arguments = $null
+            }
+            finally {
+                if ($shortcutCom -is [__ComObject]) {
+                    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcutCom)
+                }
+            }
+        }
+
+        if ($targetPath) {
+            $pathsToAdd.Add($targetPath)
+        }
+
+        foreach ($candidate in $pathsToAdd) {
+            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+            $expanded = [Environment]::ExpandEnvironmentVariables($candidate)
+            if ($dedupe.Add($expanded)) {
+                [void]$candidatePaths.Add($expanded)
+            }
+        }
+
+        $appId = Get-LabAppUserModelIdFromShortcut -TargetPath $targetPath -Arguments $arguments
+        if ($candidatePaths.Count -eq 0 -and [string]::IsNullOrWhiteSpace($appId)) {
+            if ($LogWriter) {
+                Write-LabLog -Message ("Skipping preservation for {0}; unable to resolve a shortcut target or appUserModelId." -f $displayName) -LogWriter $LogWriter
+            }
+            continue
+        }
+
+        $results.Add([pscustomobject]@{
+            DisplayName    = $displayName
+            AppId          = $appId
+            CandidatePaths = $candidatePaths.ToArray()
+            ShortcutName   = $shortcut.BaseName
+            ShortcutPath   = $null
+            ForceShortcut  = $false
+            Mode           = 'Pin'
+            PinMode        = 'Pin'
+        })
+    }
+
+    if ($wscript -is [__ComObject]) {
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($wscript)
+    }
+
+    return $results.ToArray()
+}
+
+function Get-LabTaskbarRequestIdentity {
+    param(
+        [Parameter(Mandatory)]
+        $Request
+    )
+
+    if (-not $Request) {
+        return [guid]::NewGuid().ToString()
+    }
+
+    $appIdProperty = $Request.PSObject.Properties['AppId']
+    if ($appIdProperty) {
+        $appId = $appIdProperty.Value
+        if ($appId) {
+            $appIdString = $appId.ToString()
+            if (-not [string]::IsNullOrWhiteSpace($appIdString)) {
+                return "appId::{0}" -f $appIdString.ToLowerInvariant()
+            }
+        }
+    }
+
+    $shortcutProperty = $Request.PSObject.Properties['ShortcutPath']
+    if ($shortcutProperty) {
+        $shortcutPath = $shortcutProperty.Value
+        if ($shortcutPath) {
+            $shortcutString = $shortcutPath.ToString()
+            if (-not [string]::IsNullOrWhiteSpace($shortcutString)) {
+                return "shortcut::{0}" -f $shortcutString.ToLowerInvariant()
+            }
+        }
+    }
+
+    $candidateProperty = $Request.PSObject.Properties['CandidatePaths']
+    if ($candidateProperty -and $candidateProperty.Value) {
+        foreach ($candidate in $candidateProperty.Value) {
+            if ($candidate) {
+                $candidateString = $candidate.ToString()
+                if (-not [string]::IsNullOrWhiteSpace($candidateString)) {
+                    return "candidate::{0}" -f $candidateString.ToLowerInvariant()
+                }
+            }
+        }
+    }
+
+    $displayProperty = $Request.PSObject.Properties['DisplayName']
+    if ($displayProperty) {
+        $displayName = $displayProperty.Value
+        if ($displayName) {
+            $displayString = $displayName.ToString()
+            if (-not [string]::IsNullOrWhiteSpace($displayString)) {
+                return "display::{0}" -f $displayString.ToLowerInvariant()
+            }
+        }
+    }
+
+    return "guid::{0}" -f ([guid]::NewGuid().ToString())
+}
+
+function Merge-LabTaskbarRequests {
+    param(
+        [pscustomobject[]]$Primary,
+        [pscustomobject[]]$Secondary
+    )
+
+    $result = New-Object System.Collections.Generic.List[pscustomobject]
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($request in @($Primary) + @($Secondary)) {
+        if (-not $request) { continue }
+        $key = Get-LabTaskbarRequestIdentity -Request $request
+        if ($seen.Add($key)) {
+            [void]$result.Add($request)
+        }
+    }
+
+    return $result.ToArray()
+}
+
 function Get-LabTaskbarPinRequest {
     param(
         [Parameter(Mandatory)]
@@ -312,13 +540,21 @@ function Set-LabTaskbarPins {
     param(
         [Parameter(Mandatory)]
         [hashtable]$Config,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [pscustomobject[]]$PreservedPins = @()
     )
 
     $pinRequests = New-Object System.Collections.Generic.List[pscustomobject]
     $failedPinCount = 0
     $layoutRequests = New-Object System.Collections.Generic.List[pscustomobject]
     $layoutOnlyCount = 0
+
+    if ($PreservedPins) {
+        $PreservedPins = @($PreservedPins | Where-Object { $_ })
+    }
+    else {
+        $PreservedPins = @()
+    }
 
     foreach ($package in $Config.wingetPackages) {
         $pinToTaskbar = $false
@@ -385,7 +621,14 @@ function Set-LabTaskbarPins {
         }
         $reasonText = if ($reasons.Count -gt 0) { $reasons -join ' and ' } else { 'taskbar layout requirements' }
         Write-LabLog -Message ("Applying LayoutModification fallback ({0})." -f $reasonText) -LogWriter $LogWriter
-        $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $pinRequests.ToArray() -LogWriter $LogWriter
+
+        $layoutInputs = $pinRequests.ToArray()
+        if ($PreservedPins -and $PreservedPins.Count -gt 0) {
+            $layoutInputs = Merge-LabTaskbarRequests -Primary $layoutInputs -Secondary $PreservedPins
+            Write-LabLog -Message ("Preserving {0} existing taskbar pin(s) during layout fallback." -f $PreservedPins.Count) -LogWriter $LogWriter
+        }
+
+        $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $layoutInputs -LogWriter $LogWriter
         if ($layoutApplied) {
             Write-LabLog -Message 'Applied LayoutModification fallback and reset Explorer to enforce taskbar pins.' -LogWriter $LogWriter
         }

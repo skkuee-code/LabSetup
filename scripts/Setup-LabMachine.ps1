@@ -59,9 +59,23 @@ $config = Get-LabSetupConfig -ConfigPath $ConfigPath
 $logPath = Get-LabLogPath -Config $config
 $utf8WithBom = [System.Text.UTF8Encoding]::new($true) # Prevent Shift-JIS viewers from misreading log files.
 $logWriter = [System.IO.StreamWriter]::new($logPath, $true, $utf8WithBom)
+$preservedTaskbarPins = @()
 
 try {
     Write-LabLog -Message 'Starting lab machine provisioning.' -LogWriter $logWriter
+
+    if (-not $SkipTaskbarPins) {
+        try {
+            $preservedTaskbarPins = Get-LabExistingTaskbarPins -LogWriter $logWriter
+            if ($preservedTaskbarPins -and $preservedTaskbarPins.Count -gt 0) {
+                Write-LabLog -Message ("Captured {0} existing taskbar pin(s) for preservation." -f $preservedTaskbarPins.Count) -LogWriter $logWriter
+            }
+        }
+        catch {
+            $preservedTaskbarPins = @()
+            Write-LabLog -Message ("Unable to capture existing taskbar pins; continuing without preservation. {0}" -f $_.Exception.Message) -LogWriter $logWriter
+        }
+    }
 
     Install-LabPackages -Config $config -LogWriter $logWriter
 
@@ -90,7 +104,7 @@ try {
     }
 
     if (-not $SkipTaskbarPins) {
-        Set-LabTaskbarPins -Config $config -LogWriter $logWriter
+        Set-LabTaskbarPins -Config $config -LogWriter $logWriter -PreservedPins $preservedTaskbarPins
     } else {
         Write-LabLog -Message 'Skipping taskbar pinning (requested).' -LogWriter $logWriter
     }
