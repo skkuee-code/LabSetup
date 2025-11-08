@@ -774,20 +774,22 @@ function Set-TaskbarPin {
 
     for ($attempt = 1; $attempt -le $retries; $attempt++) {
         $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
-        if ($null -eq $shellItems) {
-            $shellItemArray = @()
-        }
-        elseif ($shellItems -is [string]) {
-            $shellItemArray = @($shellItems)
-        }
-        elseif ($shellItems -is [System.Collections.IEnumerable]) {
-            $shellItemArray = @($shellItems)
-        }
-        else {
-            $shellItemArray = @($shellItems)
+        $shellItemList = New-Object System.Collections.Generic.List[object]
+
+        if ($shellItems -ne $null) {
+            if ($shellItems -is [System.Collections.IEnumerable] -and -not ($shellItems -is [string])) {
+                foreach ($item in $shellItems) {
+                    if ($null -ne $item) {
+                        [void]$shellItemList.Add($item)
+                    }
+                }
+            }
+            else {
+                [void]$shellItemList.Add($shellItems)
+            }
         }
 
-        if ($shellItemArray.Count -eq 0) {
+        if ($shellItemList.Count -eq 0) {
             if ($attempt -lt $retries) {
                 if ($LogWriter) {
                     Write-LabLog -Message "Unable to locate a taskbar target for $DisplayName (attempt $attempt of $retries); retrying in $delay seconds." -LogWriter $LogWriter
@@ -799,7 +801,7 @@ function Set-TaskbarPin {
         }
 
         $pinned = $false
-        foreach ($shellItem in $shellItemArray) {
+        foreach ($shellItem in $shellItemList) {
             try {
                 if (Test-TaskbarPinned -ShellItem $shellItem) {
                     $pinned = $true

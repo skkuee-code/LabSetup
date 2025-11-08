@@ -11,7 +11,8 @@
             "appUserModelId": "com.squirrel.slack.slack",
             "taskbarTargets": [
                 "C:\\Program Files\\Slack\\slack.exe",
-                "C:\\Program Files (x86)\\Slack\\slack.exe"
+                "C:\\Program Files (x86)\\Slack\\slack.exe",
+                "%LOCALAPPDATA%\\slack\\slack.exe"
             ]
         },
         {
@@ -19,8 +20,10 @@
             "displayName": "Visual Studio Code",
             "silent": true,
             "pinToTaskbar": true,
+            "appUserModelId": "Microsoft.VisualStudioCode",
             "taskbarTargets": [
-                "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+                "C:\\Program Files\\Microsoft VS Code\\Code.exe",
+                "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"
             ]
         },
         {
@@ -28,6 +31,7 @@
             "displayName": "Google Chrome",
             "silent": true,
             "pinToTaskbar": true,
+            "appUserModelId": "Chrome",
             "taskbarTargets": [
                 "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
             ]
@@ -38,10 +42,11 @@
             "scope": "user",
             "silent": true,
             "pinToTaskbar": true,
+            "appUserModelId": "{6D809377-6AF0-444B-8957-A3773F02200E}\\ADI\\LTspice\\LTspice.exe",
             "taskbarTargets": [
                 "%LOCALAPPDATA%\\Programs\\ADI\\LTspice\\LTspice.exe",
-                "C:\\Program Files\\ADI\\LTspice\\LTspice.exe",
-                "C:\\Program Files\\LTC\\LTspiceXVII\\XVIIx64.exe"
+                "%ProgramFiles%\\ADI\\LTspice\\LTspice.exe",
+                "%ProgramFiles%\\LTC\\LTspiceXVII\\XVIIx64.exe"
             ]
         },
         {
@@ -49,9 +54,12 @@
             "displayName": "LayoutEditor",
             "silent": false,
             "pinToTaskbar": true,
+            "appUserModelId": "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\LayoutEditor\\layout.bat",
             "taskbarTargets": [
-                "C:\\Program Files\\LayoutEditor\\layouteditor.exe",
-                "C:\\Program Files (x86)\\LayoutEditor\\layouteditor.exe"
+                "%ProgramFiles%\\LayoutEditor\\layout.bat",
+                "%ProgramFiles%\\LayoutEditor\\bin\\layout.exe",
+                "%ProgramFiles(x86)%\\LayoutEditor\\layout.bat",
+                "%ProgramFiles(x86)%\\LayoutEditor\\bin\\layout.exe"
             ],
             "installer": {
                 "type": "msi",
