@@ -751,6 +751,46 @@ function Test-TaskbarPinned {
     return $false
 }
 
+function Test-LabTaskbarPinnedState {
+    param(
+        [string[]]$CandidatePaths = @(),
+        [string]$AppId,
+        [string]$ShortcutName,
+        [string]$DisplayName
+    )
+
+    $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
+    $shellItemList = New-Object System.Collections.Generic.List[object]
+
+    if ($shellItems -ne $null) {
+        if ($shellItems -is [System.Collections.IEnumerable] -and -not ($shellItems -is [string])) {
+            foreach ($item in $shellItems) {
+                if ($null -ne $item) {
+                    [void]$shellItemList.Add($item)
+                }
+            }
+        }
+        else {
+            [void]$shellItemList.Add($shellItems)
+        }
+    }
+
+    foreach ($shellItem in $shellItemList) {
+        try {
+            if ($shellItem -and (Test-TaskbarPinned -ShellItem $shellItem)) {
+                return $true
+            }
+        }
+        finally {
+            if ($shellItem -is [__ComObject]) {
+                [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shellItem)
+            }
+        }
+    }
+
+    return $false
+}
+
 function Set-TaskbarPin {
     param(
         [Parameter(Mandatory)]
@@ -773,6 +813,13 @@ function Set-TaskbarPin {
     }
 
     for ($attempt = 1; $attempt -le $retries; $attempt++) {
+        if (Test-LabTaskbarPinnedState -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName) {
+            if ($LogWriter) {
+                Write-LabLog -Message "Pinned $DisplayName to the taskbar." -LogWriter $LogWriter
+            }
+            return $true
+        }
+
         $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
         $shellItemList = New-Object System.Collections.Generic.List[object]
 
@@ -800,33 +847,31 @@ function Set-TaskbarPin {
             break
         }
 
-        $pinned = $false
-        foreach ($shellItem in $shellItemList) {
-            try {
-                if (Test-TaskbarPinned -ShellItem $shellItem) {
-                    $pinned = $true
-                    break
-                }
+        $pinTriggered = $false
+        for ($i = 0; $i -lt $shellItemList.Count; $i++) {
+            $shellItem = $shellItemList[$i]
+            if (-not $shellItem) { continue }
 
-                if (Invoke-TaskbarVerb -ShellItem $shellItem -VerbName 'taskbarpin') {
-                    Start-Sleep -Seconds 1
-                    if (Test-TaskbarPinned -ShellItem $shellItem) {
-                        $pinned = $true
-                        break
-                    }
-                }
-            }
-            finally {
-                if ($shellItem -is [__ComObject]) {
-                    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shellItem)
-                }
+            if (Invoke-TaskbarVerb -ShellItem $shellItem -VerbName 'taskbarpin') {
+                $pinTriggered = $true
+                break
             }
         }
-        if ($pinned) {
-            if ($LogWriter) {
-                Write-LabLog -Message "Pinned $DisplayName to the taskbar." -LogWriter $LogWriter
+
+        foreach ($shellItem in $shellItemList) {
+            if ($shellItem -is [__ComObject]) {
+                [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shellItem)
             }
-            return $true
+        }
+
+        if ($pinTriggered) {
+            Start-Sleep -Seconds 1
+            if (Test-LabTaskbarPinnedState -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName) {
+                if ($LogWriter) {
+                    Write-LabLog -Message "Pinned $DisplayName to the taskbar." -LogWriter $LogWriter
+                }
+                return $true
+            }
         }
 
         if ($attempt -lt $retries) {
@@ -1288,12 +1333,51 @@ function Set-LabTaskbarPins {
             $candidatePaths = @($package['taskbarTargets'] | ForEach-Object { $_ })
         }
 
+        $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
+        $forceShortcut = [bool](Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarForceShortcut')
+        if (-not $forceShortcut -and $candidatePaths.Count -gt 0) {
+            foreach ($candidate in $candidatePaths) {
+                if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+                $extension = $null
+                try {
+                    $extension = [System.IO.Path]::GetExtension($candidate)
+                }
+                catch {
+                    $extension = $null
+                }
+                if ([string]::IsNullOrWhiteSpace($extension)) {
+                    $forceShortcut = $true
+                    break
+                }
+                $normalizedExtension = $extension.ToLowerInvariant()
+                if ($normalizedExtension -notin @('.exe', '.lnk', '.appref-ms', '.url', '.msix', '.msixbundle', '.appx', '.appxbundle')) {
+                    $forceShortcut = $true
+                    break
+                }
+            }
+        }
+
+        if ($forceShortcut -and $candidatePaths.Count -gt 0) {
+            $shortcutTarget = Resolve-ExecutableFromCandidates -Candidates $candidatePaths
+            if ($shortcutTarget) {
+                $shortcutLabel = if (-not [string]::IsNullOrWhiteSpace($shortcutName)) { $shortcutName } else { $package.displayName }
+                $shortcutPath = New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $shortcutTarget -Config $Config
+                if ($shortcutPath) {
+                    $candidatePaths = @($shortcutPath) + $candidatePaths
+                    try {
+                        $shortcutName = Split-Path -Path $shortcutPath -Leaf
+                    }
+                    catch {
+                        $shortcutName = $shortcutLabel
+                    }
+                }
+            }
+        }
+
         $appId = $null
         if ($package.ContainsKey('appUserModelId')) {
             $appId = $package['appUserModelId']
         }
-
-        $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
 
         $pinSucceeded = $false
         try {
