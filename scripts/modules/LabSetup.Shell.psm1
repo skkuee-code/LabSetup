@@ -85,25 +85,39 @@ function Get-LabTaskbarShellItems {
     )
 
     $items = New-Object System.Collections.Generic.List[object]
-    $resolvedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $resolvedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-    if ($CandidatePaths) {
-        foreach ($candidate in $CandidatePaths) {
-            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-            $exe = Resolve-ExecutableFromCandidates -Candidates @($candidate)
-            if ($exe -and $resolvedPaths.Add($exe)) {
-                $item = Get-ShellItemFromPath -Path $exe
-                if ($item) {
-                    [void]$items.Add($item)
-                }
-            }
+    $tryAddItem = {
+        param(
+            [string]$Key,
+            $ShellItem
+        )
+
+        if (-not $ShellItem) { return }
+        if ([string]::IsNullOrWhiteSpace($Key)) { return }
+
+        if ($resolvedKeys.Add($Key)) {
+            [void]$items.Add($ShellItem)
         }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($AppId)) {
         $appItem = Get-ShellItemFromAppId -AppId $AppId
         if ($appItem) {
-            [void]$items.Add($appItem)
+            & $tryAddItem "APPID::$AppId" $appItem
+        }
+    }
+
+    if ($CandidatePaths) {
+        foreach ($candidate in $CandidatePaths) {
+            if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+            $exe = Resolve-ExecutableFromCandidates -Candidates @($candidate)
+            if ($exe) {
+                $item = Get-ShellItemFromPath -Path $exe
+                if ($item) {
+                    & $tryAddItem ("PATH::$exe") $item
+                }
+            }
         }
     }
 
@@ -117,10 +131,10 @@ function Get-LabTaskbarShellItems {
 
     foreach ($name in $shortcutNames) {
         $shortcutPath = Get-StartMenuShortcutPath -ShortcutName $name
-        if ($shortcutPath -and $resolvedPaths.Add($shortcutPath)) {
+        if ($shortcutPath) {
             $item = Get-ShellItemFromPath -Path $shortcutPath
             if ($item) {
-                [void]$items.Add($item)
+                & $tryAddItem ("SHORTCUT::$shortcutPath") $item
             }
         }
     }
