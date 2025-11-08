@@ -286,6 +286,15 @@ function Get-LabTaskbarPinRequest {
         }
     }
 
+    $pinModeValue = 'Shell'
+    $pinModeRaw = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'taskbarPinMode'
+    if ($pinModeRaw) {
+        $normalizedPinMode = $pinModeRaw.ToString().Trim().ToLowerInvariant()
+        if ($normalizedPinMode -in @('layout', 'layoutonly')) {
+            $pinModeValue = 'Layout'
+        }
+    }
+
     return [pscustomobject]@{
         Package        = $Package
         DisplayName    = $displayName
@@ -295,6 +304,7 @@ function Get-LabTaskbarPinRequest {
         ShortcutPath   = $shortcutPath
         ForceShortcut  = $forceShortcut
         Mode           = $Mode
+        PinMode        = $pinModeValue
     }
 }
 
@@ -307,6 +317,8 @@ function Set-LabTaskbarPins {
 
     $pinRequests = New-Object System.Collections.Generic.List[pscustomobject]
     $failedPinCount = 0
+    $layoutRequests = New-Object System.Collections.Generic.List[pscustomobject]
+    $layoutOnlyCount = 0
 
     foreach ($package in $Config.wingetPackages) {
         $pinToTaskbar = $false
@@ -321,6 +333,31 @@ function Set-LabTaskbarPins {
 
         [void]$pinRequests.Add($pinRequest)
 
+        $requiresLayoutMode = ($pinRequest.PinMode -eq 'Layout')
+        if ($requiresLayoutMode) {
+            $alreadyPinned = $false
+            try {
+                $alreadyPinned = Test-LabTaskbarPinnedState -CandidatePaths $pinRequest.CandidatePaths -AppId $pinRequest.AppId -ShortcutName $pinRequest.ShortcutName -DisplayName $pinRequest.DisplayName
+            }
+            catch {
+                $alreadyPinned = $false
+            }
+
+            if ($alreadyPinned) {
+                if ($LogWriter) {
+                    Write-LabLog -Message "$($pinRequest.DisplayName) already satisfies the layout-only taskbar pin requirement; skipping layout update." -LogWriter $LogWriter
+                }
+            }
+            else {
+                if ($LogWriter) {
+                    Write-LabLog -Message "$($pinRequest.DisplayName) requires layout-only taskbar pinning; queuing LayoutModification fallback." -LogWriter $LogWriter
+                }
+                [void]$layoutRequests.Add($pinRequest)
+                $layoutOnlyCount++
+            }
+            continue
+        }
+
         $pinSucceeded = $false
         try {
             $pinSucceeded = Set-TaskbarPin -DisplayName $pinRequest.DisplayName -Config $Config -CandidatePaths $pinRequest.CandidatePaths -AppId $pinRequest.AppId -ShortcutName $pinRequest.ShortcutName -LogWriter $LogWriter
@@ -334,11 +371,20 @@ function Set-LabTaskbarPins {
 
         if (-not $pinSucceeded) {
             $failedPinCount++
+            [void]$layoutRequests.Add($pinRequest)
         }
     }
 
-    if ($failedPinCount -gt 0 -and $pinRequests.Count -gt 0) {
-        Write-LabLog -Message ("{0} taskbar pin attempts failed; generating fallback layout." -f $failedPinCount) -LogWriter $LogWriter
+    if ($layoutRequests.Count -gt 0 -and $pinRequests.Count -gt 0) {
+        $reasons = New-Object System.Collections.Generic.List[string]
+        if ($layoutOnlyCount -gt 0) {
+            $reasons.Add("{0} layout-only pin(s)" -f $layoutOnlyCount)
+        }
+        if ($failedPinCount -gt 0) {
+            $reasons.Add("{0} failed pin attempt(s)" -f $failedPinCount)
+        }
+        $reasonText = if ($reasons.Count -gt 0) { $reasons -join ' and ' } else { 'taskbar layout requirements' }
+        Write-LabLog -Message ("Applying LayoutModification fallback ({0})." -f $reasonText) -LogWriter $LogWriter
         $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $pinRequests.ToArray() -LogWriter $LogWriter
         if ($layoutApplied) {
             Write-LabLog -Message 'Applied LayoutModification fallback and reset Explorer to enforce taskbar pins.' -LogWriter $LogWriter

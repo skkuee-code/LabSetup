@@ -126,6 +126,78 @@ function Reset-VoltaNodeCaches {
     }
 }
 
+function Test-VoltaNodeMetadataMismatch {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VoltaHome
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VoltaHome)) {
+        return $false
+    }
+
+    $inventoryNodePath = Join-Path -Path $VoltaHome -ChildPath 'tools\inventory\node'
+    $imageNodePath = Join-Path -Path $VoltaHome -ChildPath 'tools\image\node'
+
+    $hasMetadata = $false
+    if (Test-Path -LiteralPath $inventoryNodePath -PathType Container) {
+        try {
+            $metadataFiles = Get-ChildItem -LiteralPath $inventoryNodePath -Filter 'node-v*-npm' -File -ErrorAction Stop
+            if ($metadataFiles -and $metadataFiles.Count -gt 0) {
+                $hasMetadata = $true
+            }
+        }
+        catch {
+            $hasMetadata = $false
+        }
+    }
+
+    if ($hasMetadata) {
+        return $false
+    }
+
+    $hasNodeArtifacts = $false
+    if (Test-Path -LiteralPath $inventoryNodePath -PathType Container) {
+        try {
+            $inventoryArtifacts = Get-ChildItem -LiteralPath $inventoryNodePath -ErrorAction Stop
+            if ($inventoryArtifacts -and $inventoryArtifacts.Count -gt 0) {
+                $hasNodeArtifacts = $true
+            }
+        }
+        catch {
+            $hasNodeArtifacts = $false
+        }
+    }
+
+    if (-not $hasNodeArtifacts -and (Test-Path -LiteralPath $imageNodePath -PathType Container)) {
+        try {
+            $imageArtifacts = Get-ChildItem -LiteralPath $imageNodePath -ErrorAction Stop
+            if ($imageArtifacts -and $imageArtifacts.Count -gt 0) {
+                $hasNodeArtifacts = $true
+            }
+        }
+        catch {
+            $hasNodeArtifacts = $false
+        }
+    }
+
+    return (-not $hasMetadata) -and $hasNodeArtifacts
+}
+
+function Repair-VoltaNodeMetadataState {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VoltaHome,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    if (Test-VoltaNodeMetadataMismatch -VoltaHome $VoltaHome) {
+        Write-LabLog -Message 'Detected Volta Node artifacts without npm metadata; resetting caches before continuing.' -LogWriter $LogWriter
+        Reset-VoltaNodeCaches -VoltaHome $VoltaHome -LogWriter $LogWriter
+        Initialize-VoltaDirectoryLayout -VoltaHome $VoltaHome
+    }
+}
+
 function Get-VoltaPackageDescriptor {
     param(
         [Parameter(Mandatory)]
@@ -268,6 +340,7 @@ function Set-VoltaToolchain {
 
     $voltaHome = Join-Path -Path $Config.programDataPath -ChildPath 'volta'
     Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome
+    Repair-VoltaNodeMetadataState -VoltaHome $voltaHome -LogWriter $LogWriter
     $voltaBin = Join-Path -Path $voltaHome -ChildPath 'bin'
     Add-MachinePathEntry -Path $voltaBin
     $env:VOLTA_HOME = $voltaHome
