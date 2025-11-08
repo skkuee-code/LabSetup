@@ -259,52 +259,85 @@ function Add-MachinePathEntry {
     $comparisonTarget = $target.TrimEnd('\')
     $comparison = [System.StringComparison]::OrdinalIgnoreCase
 
+    $matchesTarget = {
+        param([string]$Segment)
+        if ([string]::IsNullOrWhiteSpace($Segment)) { return $false }
+        $normalizedSegment = $Segment.Trim().TrimEnd('\')
+        return $normalizedSegment.Equals($comparisonTarget, $comparison)
+    }
+
     $machineCurrent = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $machineSegments = @()
     if ($machineCurrent) {
-        $machineSegments = $machineCurrent -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        foreach ($segment in ($machineCurrent -split ';')) {
+            if (-not [string]::IsNullOrWhiteSpace($segment)) {
+                $machineSegments += $segment.Trim()
+            }
+        }
     }
 
     $machineHasTarget = $false
     foreach ($segment in $machineSegments) {
-        $normalizedSegment = $segment.Trim().TrimEnd('\')
-        if ($normalizedSegment.Equals($comparisonTarget, $comparison)) {
+        if (& $matchesTarget $segment) {
             $machineHasTarget = $true
             break
         }
     }
 
-    if (-not $machineHasTarget) {
-        if ($Prepend) {
-            $machineSegments = @($target) + $machineSegments
+    $machineNeedsUpdate = $false
+    if ($Prepend) {
+        $filteredMachineSegments = @()
+        foreach ($segment in $machineSegments) {
+            if (-not (& $matchesTarget $segment)) {
+                $filteredMachineSegments += $segment
+            }
         }
-        else {
-            $machineSegments = $machineSegments + $target
-        }
+        $machineSegments = @($target) + $filteredMachineSegments
+        $machineNeedsUpdate = $true
+    }
+    elseif (-not $machineHasTarget) {
+        $machineSegments = $machineSegments + $target
+        $machineNeedsUpdate = $true
+    }
+
+    if ($machineNeedsUpdate) {
         [Environment]::SetEnvironmentVariable('Path', ($machineSegments -join ';'), 'Machine')
     }
 
     $processSegments = @()
     if ($env:Path) {
-        $processSegments = $env:Path -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        foreach ($segment in ($env:Path -split ';')) {
+            if (-not [string]::IsNullOrWhiteSpace($segment)) {
+                $processSegments += $segment.Trim()
+            }
+        }
     }
 
     $processHasTarget = $false
     foreach ($segment in $processSegments) {
-        $normalizedSegment = $segment.Trim().TrimEnd('\')
-        if ($normalizedSegment.Equals($comparisonTarget, $comparison)) {
+        if (& $matchesTarget $segment) {
             $processHasTarget = $true
             break
         }
     }
 
-    if (-not $processHasTarget) {
-        if ($Prepend) {
-            $processSegments = @($target) + $processSegments
+    $processNeedsUpdate = $false
+    if ($Prepend) {
+        $filteredProcessSegments = @()
+        foreach ($segment in $processSegments) {
+            if (-not (& $matchesTarget $segment)) {
+                $filteredProcessSegments += $segment
+            }
         }
-        else {
-            $processSegments = $processSegments + $target
-        }
+        $processSegments = @($target) + $filteredProcessSegments
+        $processNeedsUpdate = $true
+    }
+    elseif (-not $processHasTarget) {
+        $processSegments = $processSegments + $target
+        $processNeedsUpdate = $true
+    }
+
+    if ($processNeedsUpdate) {
         $env:Path = ($processSegments -join ';')
     }
 }
