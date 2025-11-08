@@ -337,6 +337,14 @@ function Reset-LabTaskbarLayoutState {
         }
     }
 
+    $explorerWasRunning = $false
+    try {
+        $explorerWasRunning = @(Get-Process -Name explorer -ErrorAction SilentlyContinue).Count -gt 0
+    }
+    catch {
+        $explorerWasRunning = $false
+    }
+
     try {
         Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
     }
@@ -345,10 +353,15 @@ function Reset-LabTaskbarLayoutState {
     }
 
     Start-Sleep -Seconds 2
-    try {
-        Start-Process -FilePath (Join-Path -Path $env:SystemRoot -ChildPath 'explorer.exe') | Out-Null
+    if ($explorerWasRunning) {
+        try {
+            Start-Process -FilePath (Join-Path -Path $env:SystemRoot -ChildPath 'explorer.exe') | Out-Null
+        }
+        catch {
+            # If Explorer cannot restart, allow the parent shell to continue.
+        }
     }
-    catch {
-        # If Explorer cannot restart, allow the parent shell to continue.
+    elseif ($LogWriter) {
+        Write-LabLog -Message 'Explorer was not running before reset; leaving it closed.' -LogWriter $LogWriter
     }
 }
