@@ -106,7 +106,23 @@ function Get-LabTaskbarLayoutEntries {
 
         $displayName = $request.DisplayName
         $appId = $request.AppId
+        if ($appId -and $appId -isnot [string]) {
+            $appId = $appId.ToString()
+        }
+
+        $forceShortcut = $false
+        if ($request.PSObject.Properties['ForceShortcut']) {
+            $forceShortcut = [bool]$request.ForceShortcut
+        }
+
+        $appIdLooksLikePath = $false
         if (-not [string]::IsNullOrWhiteSpace($appId)) {
+            $appIdLooksLikePath = ($appId.IndexOf(':') -ge 0) -or
+                ($appId -match '[\\/]+') -or
+                ($appId -match '\.(exe|bat|cmd|ps1|lnk)$')
+        }
+
+        if (-not $forceShortcut -and -not $appIdLooksLikePath -and -not [string]::IsNullOrWhiteSpace($appId)) {
             $entryType = if ($appId -match '!.+$' -and $appId -match '_') { 'UWA' } else { 'DesktopAppId' }
             [void]$entries.Add(@{
                 Type = $entryType
@@ -179,6 +195,29 @@ function Set-LabTaskbarLayout {
     $entries = Get-LabTaskbarLayoutEntries -TaskbarRequests $TaskbarRequests -Config $Config -LogWriter $LogWriter
     if ($entries.Count -eq 0) {
         return $false
+    }
+
+    $explorerAppId = 'Microsoft.Windows.Explorer'
+    $explorerIndex = -1
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        $entry = $entries[$i]
+        if ($entry -and $entry.Type -eq 'DesktopAppId' -and $entry.Value -eq $explorerAppId) {
+            $explorerIndex = $i
+            break
+        }
+    }
+
+    if ($explorerIndex -gt 0) {
+        $existingExplorer = $entries[$explorerIndex]
+        $entries.RemoveAt($explorerIndex)
+        $entries.Insert(0, $existingExplorer)
+    }
+    elseif ($explorerIndex -lt 0) {
+        $entries.Insert(0, @{
+            Type = 'DesktopAppId'
+            Value = $explorerAppId
+            DisplayName = 'File Explorer'
+        })
     }
 
     $sb = New-Object System.Text.StringBuilder
