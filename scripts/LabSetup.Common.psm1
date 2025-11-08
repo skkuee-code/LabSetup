@@ -1697,6 +1697,81 @@ function Set-GitLfsConfiguration {
     & $gitExe 'lfs' 'install' '--system' | Out-Null
 }
 
+function Get-MikTexConfigValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$InitexmfPath,
+        [Parameter(Mandatory)]
+        [string]$Section,
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [switch]$Admin
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InitexmfPath) -or [string]::IsNullOrWhiteSpace($Section) -or [string]::IsNullOrWhiteSpace($Name)) {
+        return $null
+    }
+
+    $configSpecifier = '[{0}]{1}' -f $Section, $Name
+    $arguments = @("--show-config-value=$configSpecifier")
+    if ($Admin) {
+        $arguments = @('--admin') + $arguments
+    }
+
+    try {
+        $output = & $InitexmfPath @arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        return $null
+    }
+
+    if ($exitCode -ne 0 -and -not $output) {
+        return $null
+    }
+
+    if ($output) {
+        $firstLine = ($output | Where-Object { $_ -ne $null } | Select-Object -First 1)
+        if ($null -ne $firstLine) {
+            return $firstLine.Trim()
+        }
+    }
+
+    return $null
+}
+
+function Test-MikTexAutoInstallResult {
+    param(
+        $ExitCode,
+        [Parameter(Mandatory)]
+        [string]$InitexmfPath,
+        [switch]$Admin,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    if ($ExitCode -eq 0) {
+        return $true
+    }
+
+    $exitCodeDisplay = if ($null -eq $ExitCode) { 'unknown' } else { $ExitCode }
+    $currentValue = Get-MikTexConfigValue -InitexmfPath $InitexmfPath -Section 'MPM' -Name 'AutoInstall' -Admin:$Admin.IsPresent
+    $normalized = $null
+
+    if ($currentValue) {
+        $normalized = $currentValue.Trim().ToLowerInvariant()
+    }
+
+    $enabledValues = @('1', 'yes', 'true', 'on')
+    if ($normalized -and ($normalized -in $enabledValues)) {
+        Write-LabLog -Message ("initexmf exit code {0} while enabling AutoInstall, but configuration now reports AutoInstall={1}; continuing." -f $exitCodeDisplay, $currentValue) -LogWriter $LogWriter
+        return $true
+    }
+
+    $valueDisplay = if ($currentValue) { $currentValue } else { 'unset' }
+    Write-LabLog -Message ("initexmf exit code {0} while enabling AutoInstall; current AutoInstall value is {1}." -f $exitCodeDisplay, $valueDisplay) -LogWriter $LogWriter
+    return $false
+}
+
 function Set-MikTexConfiguration {
     param(
         [hashtable]$Config,
@@ -1760,9 +1835,26 @@ function Set-MikTexConfiguration {
     }
 
     if ($Config.tex.autoInstallMissingPackages) {
-        Write-LabLog -Message 'Enabling MiKTeX automatic package installation (admin)...' -LogWriter $LogWriter
-        $autoInstallProcess = Invoke-ProcessWithSpinner -FilePath $initexmf -ArgumentList @('--admin', '--set-config-value', '[MPM]AutoInstall=1') -Activity 'Enabling MiKTeX automatic package installation (admin)...'
-        if ($autoInstallProcess.ExitCode -ne 0) {
+        $autoInstallActivity = 'Enabling MiKTeX automatic package installation (admin)...'
+        $attempt = 0
+        $maxAttempts = 2
+        $autoInstallConfigured = $false
+
+        while (-not $autoInstallConfigured -and $attempt -lt $maxAttempts) {
+            $attempt++
+            if ($attempt -gt 1) {
+                Write-LabLog -Message ("Retrying MiKTeX automatic package installation toggle (attempt {0} of {1})..." -f $attempt, $maxAttempts) -LogWriter $LogWriter
+            }
+            else {
+                Write-LabLog -Message $autoInstallActivity -LogWriter $LogWriter
+            }
+
+            $autoInstallProcess = Invoke-ProcessWithSpinner -FilePath $initexmf -ArgumentList @('--admin', '--set-config-value', '[MPM]AutoInstall=1') -Activity $autoInstallActivity
+            $autoInstallExitCode = Get-LabProcessExitCode -Process $autoInstallProcess
+            $autoInstallConfigured = Test-MikTexAutoInstallResult -ExitCode $autoInstallExitCode -InitexmfPath $initexmf -Admin -LogWriter $LogWriter
+        }
+
+        if (-not $autoInstallConfigured) {
             throw 'initexmf failed to set AutoInstall for MiKTeX.'
         }
     }
