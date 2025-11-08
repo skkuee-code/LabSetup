@@ -158,6 +158,29 @@ function Install-UvPortableBinary {
 
         $response = Invoke-WebRequest -Uri $InstallerUri -UseBasicParsing -ErrorAction Stop
         $scriptContent = $response.Content
+
+        if ($scriptContent -is [byte[]]) {
+            $scriptContent = [System.Text.Encoding]::UTF8.GetString($scriptContent)
+        }
+        elseif ($scriptContent -isnot [string] -and $response.RawContentStream) {
+            $reader = $null
+            try {
+                if ($response.RawContentStream.CanSeek) {
+                    $response.RawContentStream.Position = 0
+                }
+                $reader = New-Object System.IO.StreamReader($response.RawContentStream, [System.Text.Encoding]::UTF8, $true)
+                $scriptContent = $reader.ReadToEnd()
+            }
+            catch {
+                $scriptContent = $null
+            }
+            finally {
+                if ($reader) {
+                    $reader.Dispose()
+                }
+            }
+        }
+
         if ([string]::IsNullOrWhiteSpace($scriptContent)) {
             throw "uv installer content from $InstallerUri was empty."
         }
