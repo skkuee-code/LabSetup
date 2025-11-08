@@ -23,6 +23,53 @@ $ErrorActionPreference = 'Stop'
 $commonModule = Join-Path -Path $PSScriptRoot -ChildPath 'LabSetup.Common.psm1'
 Import-Module -Name $commonModule -Force
 
+function Test-LabSetupModuleAvailability {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ModulePath,
+        [string]$RestoreModulePath,
+        [string]$FriendlyLocation
+    )
+
+    $displayLocation = if ([string]::IsNullOrWhiteSpace($FriendlyLocation)) {
+        $ModulePath
+    } else {
+        $FriendlyLocation
+    }
+
+    if (-not (Test-Path -LiteralPath $ModulePath -PathType Leaf)) {
+        throw "LabSetup.Common module not found at $displayLocation."
+    }
+
+    $moduleDirectory = Split-Path -Path $ModulePath -Parent
+    $segmentDirectory = Join-Path -Path $moduleDirectory -ChildPath 'modules'
+    if (-not (Test-Path -LiteralPath $segmentDirectory -PathType Container)) {
+        throw "LabSetup module segments directory not found at $segmentDirectory."
+    }
+
+    $existingModules = Get-Module -Name 'LabSetup.Common'
+    if ($existingModules) {
+        foreach ($loaded in $existingModules) {
+            Remove-Module -ModuleInfo $loaded -Force
+        }
+    }
+
+    try {
+        Import-Module -Name $ModulePath -Force -ErrorAction Stop | Out-Null
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        throw "Failed to import LabSetup.Common from $displayLocation ($ModulePath): $errorMessage"
+    }
+    finally {
+        Remove-Module -Name 'LabSetup.Common' -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($RestoreModulePath) {
+        Import-Module -Name $RestoreModulePath -Force -ErrorAction Stop | Out-Null
+    }
+}
+
 Confirm-LabAdministrator
 
 $repositoryRoot = Split-Path -Path $PSScriptRoot -Parent
@@ -88,5 +135,9 @@ if (-not $SkipAcl) {
     icacls $DestinationPath /inheritance:r | Out-Null
     icacls $DestinationPath /grant 'BUILTIN\Administrators:(OI)(CI)F' 'BUILTIN\Users:(OI)(CI)RX' | Out-Null
 }
+
+$destinationModulePath = Join-Path -Path $DestinationPath -ChildPath 'scripts\LabSetup.Common.psm1'
+Write-Host 'Validating LabSetup module in deployment target...' -ForegroundColor Cyan
+Test-LabSetupModuleAvailability -ModulePath $destinationModulePath -RestoreModulePath $commonModule -FriendlyLocation "deployment target ($DestinationPath)"
 
 Write-Host 'Deployment complete.' -ForegroundColor Green

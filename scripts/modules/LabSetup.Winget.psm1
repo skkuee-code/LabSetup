@@ -1,0 +1,380 @@
+$script:WingetExitCodes = @{
+    UpdateNotApplicable    = -1978335189
+    UpgradeVersionNotNewer = -1978335153
+    PackageAlreadyInstalled = -1978335135
+    NoApplicableInstaller  = -1978335216
+    NoInstalledPackage     = -1978335212
+    InstallAlreadyInstalled = -1978334963
+    InstallDowngrade       = -1978334962
+}
+
+$script:WingetDefaultAcceptableExitCodes = @(
+    0,
+    $script:WingetExitCodes.UpdateNotApplicable,
+    $script:WingetExitCodes.UpgradeVersionNotNewer,
+    $script:WingetExitCodes.PackageAlreadyInstalled,
+    $script:WingetExitCodes.NoApplicableInstaller
+) | Where-Object { $null -ne $_ } | Select-Object -Unique
+
+function Get-WingetExecutable {
+    $command = Get-Command -Name winget -ErrorAction SilentlyContinue
+    if ($null -eq $command) {
+        throw 'winget executable not found in PATH.'
+    }
+    return $command.Source
+}
+
+function Invoke-Winget {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Arguments,
+        [int[]]$AcceptableExitCodes = @(),
+        [switch]$IgnoreError,
+        [string]$LogFilePath,
+        [System.IO.StreamWriter]$LogWriter,
+        [string]$ActivityMessage,
+        [switch]$ShowSpinner
+    )
+
+    $winget = Get-WingetExecutable
+
+    if (-not $LogFilePath) {
+        $tempRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
+        New-LabDirectory -Path $tempRoot
+        $LogFilePath = Join-Path -Path $tempRoot -ChildPath ("winget_{0:yyyyMMdd_HHmmssfff}.log" -f (Get-Date))
+    } else {
+        $logDir = Split-Path -Path $LogFilePath -Parent
+        if ($logDir) {
+            New-LabDirectory -Path $logDir
+        }
+    }
+
+    $argumentsWithLogging = @($Arguments)
+    $hasLogArgument = $false
+    for ($i = 0; $i -lt $argumentsWithLogging.Count; $i++) {
+        $current = $argumentsWithLogging[$i]
+        if ($null -eq $current) { continue }
+        if ($current -eq '--log' -or $current -eq '-o') {
+            $hasLogArgument = $true
+            break
+        }
+    }
+    if (-not $hasLogArgument) {
+        $argumentsWithLogging += @('--log', $LogFilePath, '--verbose-logs')
+    }
+
+    $argumentLine = Join-LabCommandLineArguments -Arguments $argumentsWithLogging
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $winget
+    $startInfo.Arguments = $argumentLine
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WorkingDirectory = (Get-Location).ProviderPath
+
+    try {
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+    }
+    catch {
+        throw "Failed to start winget: $($_.Exception.Message)"
+    }
+
+    if (-not $process) {
+        throw 'Failed to launch winget process.'
+    }
+
+    try {
+        if ($ShowSpinner -and -not [string]::IsNullOrWhiteSpace($ActivityMessage)) {
+            Show-LabProcessSpinner -Process $process -Activity $ActivityMessage
+        }
+
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+    }
+    finally {
+        if ($process) {
+            $process.Dispose()
+        }
+    }
+
+    $effectiveAcceptableCodes = @()
+    if ($AcceptableExitCodes) {
+        $effectiveAcceptableCodes += $AcceptableExitCodes
+    }
+    if ($script:WingetDefaultAcceptableExitCodes) {
+        $effectiveAcceptableCodes += $script:WingetDefaultAcceptableExitCodes
+    }
+    if ($effectiveAcceptableCodes) {
+        $effectiveAcceptableCodes = @($effectiveAcceptableCodes | Where-Object { $null -ne $_ } | Select-Object -Unique)
+    }
+
+    $isAcceptable = ($exitCode -eq 0)
+    if (-not $isAcceptable -and $effectiveAcceptableCodes) {
+        $isAcceptable = $effectiveAcceptableCodes -contains $exitCode
+    }
+
+    if ($LogWriter -and (Test-Path -LiteralPath $LogFilePath -PathType Leaf)) {
+        Write-LabLog -Message "winget log captured at $LogFilePath" -LogWriter $LogWriter
+    }
+
+    if (-not $isAcceptable -and -not $IgnoreError) {
+        $logExcerpt = $null
+        if (Test-Path -LiteralPath $LogFilePath -PathType Leaf) {
+            try {
+                $logExcerpt = (Get-Content -LiteralPath $LogFilePath -Tail 40)
+            }
+            catch {
+                $logExcerpt = $null
+            }
+        }
+
+        $exitCodeDisplay = if ($null -ne $exitCode) { $exitCode } else { 'unknown' }
+        $message = "winget exited with code $exitCodeDisplay."
+        if ($logExcerpt) {
+            $message += "`nLast winget log lines:`n$($logExcerpt -join [Environment]::NewLine)"
+        } elseif ($LogFilePath) {
+            $message += "`nSee $LogFilePath for details."
+        }
+
+        throw $message
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        LogPath  = $LogFilePath
+    }
+}
+
+function Get-WingetLogRoot {
+    param(
+        [hashtable]$Config
+    )
+
+    $root = $null
+    if ($Config -and -not [string]::IsNullOrWhiteSpace($Config.programDataPath)) {
+        $root = Join-Path -Path $Config.programDataPath -ChildPath 'logs\winget'
+    }
+    else {
+        $root = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath 'LabSetupWinget'
+    }
+
+    New-LabDirectory -Path $root
+    return $root
+}
+
+function Get-WingetScopeCandidates {
+    param(
+        $ScopeDefinition
+    )
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    if ($ScopeDefinition -is [System.Collections.IEnumerable] -and -not ($ScopeDefinition -is [string])) {
+        foreach ($scopeValue in $ScopeDefinition) {
+            if ([string]::IsNullOrWhiteSpace($scopeValue)) { continue }
+            $normalized = $scopeValue.Trim().ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace($normalized)) {
+                [void]$candidates.Add($normalized)
+            }
+        }
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($ScopeDefinition)) {
+        [void]$candidates.Add($ScopeDefinition.Trim().ToLowerInvariant())
+    }
+
+    if ($candidates.Count -eq 0) {
+        [void]$candidates.Add('machine')
+    }
+    elseif ($candidates.Contains('user') -and -not $candidates.Contains('machine')) {
+        [void]$candidates.Add('machine')
+    }
+
+    return @($candidates | Select-Object -Unique)
+}
+
+function Get-WingetInstallAttempts {
+    param(
+        [switch]$PreferSilent
+    )
+
+    $attempts = New-Object System.Collections.Generic.List[hashtable]
+
+    if ($PreferSilent) {
+        [void]$attempts.Add(@{
+            Name      = 'silent'
+            ExtraArgs = @('--silent')
+            Message   = 'silent'
+        })
+    }
+
+    [void]$attempts.Add(@{
+        Name      = 'interactive'
+        ExtraArgs = @()
+        Message   = 'interactive'
+    })
+
+    return $attempts.ToArray()
+}
+
+function Get-WingetInstallPrecheckResult {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Package,
+        [Parameter(Mandatory)]
+        [string]$LogRoot,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    $id = $Package.id
+    $sanitizedId = ($id -replace '[^A-Za-z0-9_.-]', '_')
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
+    $logPath = Join-Path -Path $LogRoot -ChildPath ("{0}_precheck_{1}.log" -f $sanitizedId, $timestamp)
+
+    $arguments = @(
+        'upgrade',
+        '--id', $id,
+        '--exact',
+        '--accept-package-agreements',
+        '--accept-source-agreements'
+    )
+
+    $precheckExitCodes = @(
+        $script:WingetExitCodes.UpdateNotApplicable,
+        $script:WingetExitCodes.UpgradeVersionNotNewer,
+        $script:WingetExitCodes.PackageAlreadyInstalled,
+        $script:WingetExitCodes.NoApplicableInstaller,
+        $script:WingetExitCodes.NoInstalledPackage
+    )
+
+    $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $precheckExitCodes -IgnoreError -LogWriter $LogWriter -LogFilePath $logPath
+
+    switch ($result.ExitCode) {
+        0 { return 'UpdateAvailable' }
+        $script:WingetExitCodes.UpdateNotApplicable { return 'UpToDate' }
+        $script:WingetExitCodes.UpgradeVersionNotNewer { return 'AlreadyInstalled' }
+        $script:WingetExitCodes.PackageAlreadyInstalled { return 'AlreadyInstalled' }
+        $script:WingetExitCodes.NoApplicableInstaller { return 'ScopeMismatch' }
+        $script:WingetExitCodes.NoInstalledPackage { return 'NotInstalled' }
+        default { return 'Unknown' }
+    }
+}
+
+function Install-WingetPackage {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Package,
+        [System.IO.StreamWriter]$LogWriter,
+        [hashtable]$Config
+    )
+
+    $id = $Package.id
+    $displayName = $Package.displayName
+    $sanitizedId = ($id -replace '[^A-Za-z0-9_.-]', '_')
+
+    $wingetLogRoot = Get-WingetLogRoot -Config $Config
+
+    $alwaysInstall = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'alwaysInstall')
+    $skipUpgradePrecheck = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'skipUpgradePrecheck')
+    $precheckStatus = 'Unknown'
+    if (-not $alwaysInstall -and -not $skipUpgradePrecheck) {
+        $precheckStatus = Get-WingetInstallPrecheckResult -Package $Package -LogRoot $wingetLogRoot -LogWriter $LogWriter
+        if ($precheckStatus -in @('UpToDate', 'AlreadyInstalled')) {
+            Write-LabLog -Message "$displayName is already at the latest version; skipping winget install." -LogWriter $LogWriter
+            return
+        }
+    }
+
+    $baseArgs = @(
+        'install',
+        '--id', $id,
+        '--exact',
+        '--accept-package-agreements',
+        '--accept-source-agreements'
+    )
+
+    $declaredVersion = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'version'
+    if ($declaredVersion) {
+        $baseArgs += @('--version', $declaredVersion)
+    }
+
+    $overrideArgs = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'override'
+    if ($overrideArgs) {
+        $baseArgs += @('--override', $overrideArgs)
+    }
+
+    $requestedScope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
+    $scopeCandidates = Get-WingetScopeCandidates -ScopeDefinition $requestedScope
+
+    $expectedExitCodes = @(
+        $script:WingetExitCodes.UpdateNotApplicable,
+        $script:WingetExitCodes.UpgradeVersionNotNewer,
+        $script:WingetExitCodes.PackageAlreadyInstalled,
+        $script:WingetExitCodes.NoApplicableInstaller,
+        $script:WingetExitCodes.InstallAlreadyInstalled,
+        $script:WingetExitCodes.InstallDowngrade
+    )
+
+    $silentFlag = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent')
+    $installAttempts = Get-WingetInstallAttempts -PreferSilent:$silentFlag
+
+    Write-LabLog -Message "Installing $displayName ($id) via winget..." -LogWriter $LogWriter
+
+    :ScopeAttempt for ($scopeIndex = 0; $scopeIndex -lt $scopeCandidates.Count; $scopeIndex++) {
+        $currentScope = $scopeCandidates[$scopeIndex]
+        $scopeArgs = @('--scope', $currentScope)
+        if ($scopeCandidates.Count -gt 1) {
+            Write-LabLog -Message "Attempting $displayName install with scope '$currentScope'." -LogWriter $LogWriter
+        }
+
+        :InstallAttempt foreach ($attempt in $installAttempts) {
+            $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
+            $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
+            $arguments = @($baseArgs + $scopeArgs + $attempt.ExtraArgs)
+            $activity = "Installing $displayName"
+            $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath -ActivityMessage $activity -ShowSpinner
+
+            switch ($result.ExitCode) {
+                0 {
+                    Write-LabLog -Message "Completed $displayName installation." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.UpdateNotApplicable {
+                    Write-LabLog -Message "$displayName is already at the latest version; skipping." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.UpgradeVersionNotNewer {
+                    Write-LabLog -Message "$displayName is newer than the requested version; leaving existing install in place." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.PackageAlreadyInstalled {
+                    Write-LabLog -Message "$displayName is already installed; skipping." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.InstallAlreadyInstalled {
+                    Write-LabLog -Message "$displayName is already installed (install exit code); skipping." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.NoApplicableInstaller {
+                    if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
+                        Write-LabLog -Message "$displayName does not provide silent install metadata; retrying with interactive mode." -LogWriter $LogWriter
+                        continue InstallAttempt
+                    }
+
+                    if ($scopeIndex -lt ($scopeCandidates.Count - 1)) {
+                        $nextScope = $scopeCandidates[$scopeIndex + 1]
+                        Write-LabLog -Message "$displayName does not offer an installer for scope '$currentScope'; retrying with scope '$nextScope'." -LogWriter $LogWriter
+                        continue ScopeAttempt
+                    }
+                }
+                $script:WingetExitCodes.InstallDowngrade {
+                    Write-LabLog -Message "$displayName install would downgrade the currently-installed version; leaving existing install in place." -LogWriter $LogWriter
+                    return
+                }
+            }
+
+            $message = "winget failed to install $displayName (exit code $($result.ExitCode)). Review $($result.LogPath) for details."
+            throw $message
+        }
+    }
+
+    throw "winget failed to install $displayName after exhausting available scopes and install modes."
+}
