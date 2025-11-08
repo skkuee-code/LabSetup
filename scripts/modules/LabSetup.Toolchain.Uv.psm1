@@ -212,6 +212,57 @@ function Get-UvManagedExecutable {
     return Install-UvPortableBinary -DestinationDirectory $DestinationDirectory -InstallerUri $InstallerUri -LogWriter $LogWriter
 }
 
+function Update-UvGlobalShim {
+    param(
+        [Parameter(Mandatory)]
+        [string]$UvBinDirectory,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    $programFiles = ${env:ProgramFiles}
+    if ([string]::IsNullOrWhiteSpace($programFiles)) {
+        return
+    }
+
+    $linksRoot = Join-Path -Path $programFiles -ChildPath 'WinGet\Links'
+    if (-not (Test-Path -LiteralPath $linksRoot -PathType Container)) {
+        return
+    }
+
+    foreach ($exeName in @('uv.exe', 'uvx.exe')) {
+        $managedPath = Join-Path -Path $UvBinDirectory -ChildPath $exeName
+        if (-not (Test-Path -LiteralPath $managedPath -PathType Leaf)) {
+            continue
+        }
+
+        $linkPath = Join-Path -Path $linksRoot -ChildPath $exeName
+        $linkUpdated = $false
+
+        try {
+            if (Test-Path -LiteralPath $linkPath) {
+                Remove-Item -LiteralPath $linkPath -Force
+            }
+
+            New-Item -ItemType SymbolicLink -Path $linkPath -Target $managedPath | Out-Null
+            $linkUpdated = $true
+            Write-LabLog -Message ("Repointed WinGet link {0} to {1}." -f $linkPath, $managedPath) -LogWriter $LogWriter
+        }
+        catch {
+            Write-LabLog -Message ("Unable to create symbolic link for {0}. {1}" -f $linkPath, $_.Exception.Message) -LogWriter $LogWriter
+        }
+
+        if (-not $linkUpdated) {
+            try {
+                Copy-Item -LiteralPath $managedPath -Destination $linkPath -Force
+                Write-LabLog -Message ("Copied uv shim to {0}." -f $linkPath) -LogWriter $LogWriter
+            }
+            catch {
+                Write-LabLog -Message ("Unable to copy uv shim to {0}. {1}" -f $linkPath, $_.Exception.Message) -LogWriter $LogWriter
+            }
+        }
+    }
+}
+
 function Set-UvToolchain {
     param(
         [Parameter(Mandatory)]
@@ -257,6 +308,7 @@ function Set-UvToolchain {
     New-LabDirectory -Path $uvBin
     $uvExe = Get-UvManagedExecutable -ResolvedUvPath $uvExe -DestinationDirectory $uvBin -InstallerUri $uvInstallerUri -LogWriter $LogWriter
     Add-MachinePathEntry -Path $uvBin -Prepend
+    Update-UvGlobalShim -UvBinDirectory $uvBin -LogWriter $LogWriter
     [Environment]::SetEnvironmentVariable('UV_HOME', $uvHome, 'Machine')
     $env:UV_HOME = $uvHome
     $uvPythonRoot = Join-Path -Path $uvHome -ChildPath 'python'
