@@ -114,7 +114,7 @@ namespace LabSetup.Shortcuts
         {
             if (string.IsNullOrWhiteSpace(shortcutPath))
             {
-                throw new ArgumentNullException(nameof(shortcutPath));
+                throw new ArgumentNullException("shortcutPath");
             }
 
             var shellLink = new ShellLink();
@@ -559,3 +559,4 @@ function Reset-LabTaskbarLayoutState {
         Write-LabLog -Message 'Explorer was not running before reset; leaving it closed.' -LogWriter $LogWriter
     }
 }
+
