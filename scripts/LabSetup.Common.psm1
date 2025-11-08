@@ -436,6 +436,54 @@ function New-LabDirectory {
     }
 }
 
+function Ensure-LabDirectoryWritable {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    New-LabDirectory -Path $Path
+    try {
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    }
+    catch {
+        return
+    }
+
+    try {
+        $usersSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+        $usersAccount = $usersSid.Translate([System.Security.Principal.NTAccount])
+    }
+    catch {
+        return
+    }
+
+    $hasModifyRule = $false
+    foreach ($entry in $acl.Access) {
+        if ($entry.IdentityReference -eq $usersAccount -and $entry.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow) {
+            $rights = $entry.FileSystemRights
+            $hasModify = (($rights -band [System.Security.AccessControl.FileSystemRights]::Modify) -eq [System.Security.AccessControl.FileSystemRights]::Modify)
+            $hasFull = (($rights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)
+            if ($hasModify -or $hasFull) {
+                $hasModifyRule = $true
+                break
+            }
+        }
+    }
+
+    if (-not $hasModifyRule) {
+        $inheritFlags = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($usersAccount, [System.Security.AccessControl.FileSystemRights]::Modify, $inheritFlags, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
+        $acl.AddAccessRule($rule)
+        try {
+            Set-Acl -LiteralPath $Path -AclObject $acl
+        }
+        catch {
+            # If the ACL cannot be updated, continue without failing the provisioning run.
+        }
+    }
+}
+
 function Get-LabLogPath {
     param(
         [Parameter(Mandatory)]
@@ -1308,6 +1356,53 @@ function Install-LabPackages {
     Write-Progress -Activity $progressActivity -Completed -Id 2001
 }
 
+function Get-OrderedTaskbarCandidates {
+    param(
+        [string[]]$Paths
+    )
+
+    if (-not $Paths) {
+        return @()
+    }
+
+    $priority = @{
+        '.lnk'        = 0
+        '.exe'        = 1
+        '.appref-ms'  = 2
+        '.url'        = 3
+        '.msix'       = 4
+        '.msixbundle' = 4
+        '.appx'       = 4
+        '.appxbundle' = 4
+        '.bat'        = 6
+        '.cmd'        = 6
+        '.ps1'        = 7
+    }
+
+    $indexed = @()
+    for ($i = 0; $i -lt $Paths.Count; $i++) {
+        $current = $Paths[$i]
+        $extension = $null
+        try {
+            $extension = [System.IO.Path]::GetExtension($current)
+        }
+        catch {
+            $extension = $null
+        }
+        $normalized = if ($extension) { $extension.ToLowerInvariant() } else { '' }
+        $score = if ($priority.ContainsKey($normalized)) { $priority[$normalized] } else { 5 }
+        $indexed += [pscustomobject]@{
+            Path  = $current
+            Score = $score
+            Index = $i
+        }
+    }
+
+    return @(
+        $indexed | Sort-Object -Property @{ Expression = { $_.Score } }, @{ Expression = { $_.Index } } | ForEach-Object { $_.Path }
+    )
+}
+
 function Set-LabTaskbarPins {
     param(
         [Parameter(Mandatory)]
@@ -1331,6 +1426,10 @@ function Set-LabTaskbarPins {
         $candidatePaths = @()
         if ($package.ContainsKey('taskbarTargets') -and $package['taskbarTargets']) {
             $candidatePaths = @($package['taskbarTargets'] | ForEach-Object { $_ })
+        }
+
+        if ($candidatePaths.Count -gt 1) {
+            $candidatePaths = Get-OrderedTaskbarCandidates -Paths $candidatePaths
         }
 
         $shortcutName = Get-OptionalPropertyValue -InputObject $package -PropertyName 'taskbarShortcutName'
@@ -1722,6 +1821,112 @@ function Get-VoltaNodeInstallArguments {
     return @('install', "node@$normalized")
 }
 
+function Initialize-VoltaDirectoryLayout {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VoltaHome
+    )
+
+    $required = @(
+        $VoltaHome,
+        (Join-Path -Path $VoltaHome -ChildPath 'bin'),
+        (Join-Path -Path $VoltaHome -ChildPath 'cache'),
+        (Join-Path -Path $VoltaHome -ChildPath 'tmp'),
+        (Join-Path -Path $VoltaHome -ChildPath 'log'),
+        (Join-Path -Path $VoltaHome -ChildPath 'tools'),
+        (Join-Path -Path $VoltaHome -ChildPath 'tools\inventory'),
+        (Join-Path -Path $VoltaHome -ChildPath 'tools\image'),
+        (Join-Path -Path $VoltaHome -ChildPath 'tools\user')
+    )
+
+    foreach ($path in $required) {
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            Ensure-LabDirectoryWritable -Path $path
+        }
+    }
+}
+
+function Test-VoltaDefaultNpmMetadataError {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VoltaHome,
+        [double]$MaxAgeMinutes = 5
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VoltaHome)) {
+        return $false
+    }
+
+    $logDir = Join-Path -Path $VoltaHome -ChildPath 'log'
+    if (-not (Test-Path -LiteralPath $logDir -PathType Container)) {
+        return $false
+    }
+
+    $latest = Get-ChildItem -LiteralPath $logDir -Filter 'volta-error-*.log' -ErrorAction SilentlyContinue |
+        Sort-Object -Property LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $latest) { return $false }
+
+    $ageMinutes = ((Get-Date) - $latest.LastWriteTime).TotalMinutes
+    if ($MaxAgeMinutes -gt 0 -and $ageMinutes -gt $MaxAgeMinutes) {
+        return $false
+    }
+
+    try {
+        $content = Get-Content -LiteralPath $latest.FullName -Raw -ErrorAction Stop
+    }
+    catch {
+        return $false
+    }
+
+    return ($content -match 'default npm version')
+}
+
+function Reset-VoltaNodeCaches {
+    param(
+        [Parameter(Mandatory)]
+        [string]$VoltaHome,
+        [System.IO.StreamWriter]$LogWriter
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VoltaHome)) {
+        return
+    }
+
+    Write-LabLog -Message 'Clearing cached Volta Node metadata after npm version lookup failure.' -LogWriter $LogWriter
+
+    $targets = @(
+        'tools\inventory\node',
+        'tools\inventory\npm',
+        'tools\image\node',
+        'tools\image\npm'
+    )
+
+    foreach ($relative in $targets) {
+        $target = Join-Path -Path $VoltaHome -ChildPath $relative
+        if (Test-Path -LiteralPath $target) {
+            try {
+                Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+            }
+            catch {
+                Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Ensure-LabDirectoryWritable -Path $target
+    }
+
+    $lockFile = Join-Path -Path $VoltaHome -ChildPath 'volta.lock'
+    if (Test-Path -LiteralPath $lockFile -PathType Leaf) {
+        try {
+            Remove-Item -LiteralPath $lockFile -Force -ErrorAction Stop
+        }
+        catch {
+            Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Get-VoltaPackageDescriptor {
     param(
         [Parameter(Mandatory)]
@@ -1948,21 +2153,19 @@ function Set-VoltaToolchain {
     }
 
     $voltaHome = Join-Path -Path $Config.programDataPath -ChildPath 'volta'
-    New-LabDirectory -Path $voltaHome
+    Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome
     $voltaBin = Join-Path -Path $voltaHome -ChildPath 'bin'
-    New-LabDirectory -Path $voltaBin
     Add-MachinePathEntry -Path $voltaBin
     $env:VOLTA_HOME = $voltaHome
     [Environment]::SetEnvironmentVariable('VOLTA_HOME', $voltaHome, 'Machine')
 
     if ($Config.volta.nodeVersion) {
         $nodeArgs = Get-VoltaNodeInstallArguments -NodeVersion $Config.volta.nodeVersion
-        $attempt = 0
-        $maxAttempts = 2
+        $maxAttempts = 3
         $nodeInstallSucceeded = $false
+        $metadataResetPerformed = $false
 
-        while (-not $nodeInstallSucceeded -and $attempt -lt $maxAttempts) {
-            $attempt++
+        for ($attempt = 1; (-not $nodeInstallSucceeded) -and $attempt -le $maxAttempts; $attempt++) {
             if ($attempt -gt 1) {
                 Write-LabLog -Message "Retrying Volta Node installation (attempt $attempt of $maxAttempts)..." -LogWriter $LogWriter
             }
@@ -1973,6 +2176,12 @@ function Set-VoltaToolchain {
             $nodeProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList $nodeArgs -Activity "Configuring Volta Node $($Config.volta.nodeVersion)"
             $nodeDisplayLabel = if ($Config.volta.nodeVersion) { "node@$($Config.volta.nodeVersion)" } else { 'node' }
             $nodeInstallSucceeded = Test-VoltaInstallResult -Process $nodeProcess -VoltaExe $voltaExe -ExpectedVersion $Config.volta.nodeVersion -LogWriter $LogWriter -ListTarget 'node' -DisplayLabel $nodeDisplayLabel
+
+            if (-not $nodeInstallSucceeded -and -not $metadataResetPerformed -and (Test-VoltaDefaultNpmMetadataError -VoltaHome $voltaHome)) {
+                Reset-VoltaNodeCaches -VoltaHome $voltaHome -LogWriter $LogWriter
+                Initialize-VoltaDirectoryLayout -VoltaHome $voltaHome
+                $metadataResetPerformed = $true
+            }
         }
 
         if (-not $nodeInstallSucceeded) {
