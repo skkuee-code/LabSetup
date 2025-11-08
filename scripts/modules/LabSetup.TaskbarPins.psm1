@@ -150,7 +150,8 @@ function Resolve-LabShortcutPath {
         [ValidateSet('Never', 'WhenMissing', 'Always')]
         [string]$CreationPolicy = 'WhenMissing',
         [hashtable]$Config,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [string]$AppId
     )
 
     if ($CreationPolicy -ne 'Always') {
@@ -174,14 +175,6 @@ function Resolve-LabShortcutPath {
         return $null
     }
 
-    $target = Resolve-ExecutableFromCandidates -Candidates $CandidatePaths
-    if (-not $target) {
-        if ($LogWriter) {
-            Write-LabLog -Message "Unable to resolve shortcut target for $DisplayName while processing taskbar metadata." -LogWriter $LogWriter
-        }
-        return $null
-    }
-
     $shortcutLabel = if (-not [string]::IsNullOrWhiteSpace($PreferredName)) {
         $PreferredName
     }
@@ -192,7 +185,74 @@ function Resolve-LabShortcutPath {
         'LabShortcut'
     }
 
-    return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $target -Config $Config
+    $normalizedCandidates = @($CandidatePaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    $shellAppId = $null
+    foreach ($candidate in $normalizedCandidates) {
+        $candidateAppId = Get-LabAppUserModelIdFromText -Input $candidate
+        if (-not [string]::IsNullOrWhiteSpace($candidateAppId)) {
+            $shellAppId = $candidateAppId
+            break
+        }
+    }
+
+    $useAppxShortcut = $false
+    if (-not [string]::IsNullOrWhiteSpace($shellAppId)) {
+        $useAppxShortcut = $true
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($AppId) -and $AppId -match '!') {
+        $shellAppId = $AppId
+        $useAppxShortcut = $true
+    }
+
+    $effectiveAppId = if (-not [string]::IsNullOrWhiteSpace($AppId)) { $AppId } else { $shellAppId }
+
+    if ($useAppxShortcut -and $shellAppId) {
+        $windowsRoot = $env:SystemRoot
+        if ([string]::IsNullOrWhiteSpace($windowsRoot)) {
+            $windowsRoot = $env:WINDIR
+        }
+        if ([string]::IsNullOrWhiteSpace($windowsRoot)) {
+            $windowsRoot = 'C:\Windows'
+        }
+
+        $explorerCandidates = @(
+            (Join-Path -Path $windowsRoot -ChildPath 'explorer.exe'),
+            '%SystemRoot%\explorer.exe'
+        )
+
+        $explorerPath = Resolve-ExecutableFromCandidates -Candidates $explorerCandidates
+        if (-not $explorerPath) {
+            if ($LogWriter) {
+                Write-LabLog -Message "Unable to resolve explorer.exe while creating shortcut for $DisplayName." -LogWriter $LogWriter
+            }
+            return $null
+        }
+
+        $nonShellCandidates = @(
+            $normalizedCandidates | Where-Object { $_ -notmatch '(?i)^shell:appsfolder\\' }
+        )
+        $iconPath = $null
+        if ($nonShellCandidates -and $nonShellCandidates.Count -gt 0) {
+            $iconPath = Resolve-ExecutableFromCandidates -Candidates $nonShellCandidates
+        }
+        if (-not $iconPath) {
+            $iconPath = $explorerPath
+        }
+
+        $shellArgument = "shell:AppsFolder\{0}" -f $shellAppId
+        return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $explorerPath -Arguments $shellArgument -AppId $effectiveAppId -IconPath $iconPath -Config $Config
+    }
+
+    $target = Resolve-ExecutableFromCandidates -Candidates $normalizedCandidates
+    if (-not $target) {
+        if ($LogWriter) {
+            Write-LabLog -Message "Unable to resolve shortcut target for $DisplayName while processing taskbar metadata." -LogWriter $LogWriter
+        }
+        return $null
+    }
+
+    return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $target -AppId $effectiveAppId -Config $Config
 }
 
 function Get-LabAppUserModelIdFromText {
@@ -204,7 +264,7 @@ function Get-LabAppUserModelIdFromText {
         return $null
     }
 
-    $match = [System.Text.RegularExpressions.Regex]::Match($Input, 'shell:appsfolder\\(?<app>[^"''\s>]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $match = [System.Text.RegularExpressions.Regex]::Match($Input, 'shell:appsfolder\\\\(?<app>[^"''\s>]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     if ($match.Success) {
         $value = $match.Groups['app'].Value
         if (-not [string]::IsNullOrWhiteSpace($value)) {
@@ -489,7 +549,7 @@ function Get-LabTaskbarPinRequest {
         default  { 'WhenMissing' }
     }
 
-    $shortcutPath = Resolve-LabShortcutPath -PreferredName $shortcutName -DisplayName $displayName -CandidatePaths $candidatePaths -CreationPolicy $creationPolicy -Config $Config -LogWriter $LogWriter
+    $shortcutPath = Resolve-LabShortcutPath -PreferredName $shortcutName -DisplayName $displayName -CandidatePaths $candidatePaths -CreationPolicy $creationPolicy -Config $Config -LogWriter $LogWriter -AppId $appId
 
     if ($Mode -eq 'Pin' -and $forceShortcut -and -not $shortcutPath -and $LogWriter) {
         Write-LabLog -Message "taskbarForceShortcut was set for $displayName but no shortcut could be generated." -LogWriter $LogWriter

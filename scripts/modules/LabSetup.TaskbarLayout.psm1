@@ -43,6 +43,171 @@ function Convert-ToTaskbarLayoutPath {
     return $resolvedPath
 }
 
+$script:ShortcutPropertyWriterInitialized = $false
+
+function Initialize-LabShortcutPropertyWriter {
+    if ($script:ShortcutPropertyWriterInitialized) { return }
+
+    $typeDefinition = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+
+namespace LabSetup.Shortcuts
+{
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PROPERTYKEY
+    {
+        public Guid fmtid;
+        public uint pid;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PROPVARIANT
+    {
+        public ushort vt;
+        public ushort wReserved1;
+        public ushort wReserved2;
+        public ushort wReserved3;
+        public IntPtr pointerValue;
+        public int intValue;
+    }
+
+    internal enum VarEnum : ushort
+    {
+        VT_EMPTY = 0,
+        VT_LPWSTR = 31
+    }
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    internal class ShellLink
+    {
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    internal interface IPropertyStore
+    {
+        uint GetCount(out uint cProps);
+        uint GetAt(uint iProp, out PROPERTYKEY pkey);
+        uint GetValue(ref PROPERTYKEY key, out PROPVARIANT pv);
+        uint SetValue(ref PROPERTYKEY key, ref PROPVARIANT pv);
+        uint Commit();
+    }
+
+    internal static class NativeMethods
+    {
+        [DllImport("ole32.dll")]
+        internal static extern int PropVariantClear(ref PROPVARIANT pvar);
+    }
+
+    public static class ShortcutPropertyWriter
+    {
+        private static PROPERTYKEY PKEY_AppUserModel_ID = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+        private static PROPERTYKEY PKEY_AppUserModel_RelaunchCommand = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 2 };
+        private static PROPERTYKEY PKEY_AppUserModel_RelaunchIconResource = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 3 };
+        private static PROPERTYKEY PKEY_AppUserModel_RelaunchDisplayNameResource = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 4 };
+
+        public static void SetAppUserModelProperties(string shortcutPath, string appId, string relaunchCommand, string relaunchDisplayName, string relaunchIcon)
+        {
+            if (string.IsNullOrWhiteSpace(shortcutPath))
+            {
+                throw new ArgumentNullException(nameof(shortcutPath));
+            }
+
+            var shellLink = new ShellLink();
+            var persistFile = (IPersistFile)shellLink;
+            persistFile.Load(shortcutPath, 0x00000002);
+            var propertyStore = (IPropertyStore)shellLink;
+
+            if (!string.IsNullOrWhiteSpace(appId))
+            {
+                SetString(propertyStore, ref PKEY_AppUserModel_ID, appId);
+            }
+            if (!string.IsNullOrWhiteSpace(relaunchCommand))
+            {
+                SetString(propertyStore, ref PKEY_AppUserModel_RelaunchCommand, relaunchCommand);
+            }
+            if (!string.IsNullOrWhiteSpace(relaunchDisplayName))
+            {
+                SetString(propertyStore, ref PKEY_AppUserModel_RelaunchDisplayNameResource, relaunchDisplayName);
+            }
+            if (!string.IsNullOrWhiteSpace(relaunchIcon))
+            {
+                SetString(propertyStore, ref PKEY_AppUserModel_RelaunchIconResource, relaunchIcon);
+            }
+
+            propertyStore.Commit();
+            persistFile.Save(shortcutPath, true);
+
+            Marshal.ReleaseComObject(propertyStore);
+            Marshal.ReleaseComObject(persistFile);
+            Marshal.ReleaseComObject(shellLink);
+        }
+
+        private static void SetString(IPropertyStore store, ref PROPERTYKEY key, string value)
+        {
+            var variant = new PROPVARIANT();
+            try
+            {
+                variant.vt = (ushort)VarEnum.VT_LPWSTR;
+                variant.pointerValue = Marshal.StringToCoTaskMemUni(value);
+                store.SetValue(ref key, ref variant);
+            }
+            finally
+            {
+                NativeMethods.PropVariantClear(ref variant);
+            }
+        }
+    }
+}
+"@
+
+    Add-Type -TypeDefinition $typeDefinition -Language CSharp
+    $script:ShortcutPropertyWriterInitialized = $true
+}
+
+function Set-LabShortcutAppId {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ShortcutPath,
+        [string]$AppId,
+        [string]$DisplayName,
+        [string]$IconResource,
+        [string]$LaunchTarget,
+        [string]$LaunchArguments
+    )
+
+    if ([string]::IsNullOrWhiteSpace($AppId)) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $ShortcutPath -PathType Leaf)) {
+        return
+    }
+
+    $command = $LaunchTarget
+    if ([string]::IsNullOrWhiteSpace($command)) {
+        $command = $ShortcutPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LaunchArguments)) {
+        $command = ("{0} {1}" -f $command.Trim(), $LaunchArguments.Trim()).Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($IconResource) -and $IconResource.IndexOf(',') -lt 0) {
+        $IconResource = "$IconResource,0"
+    }
+
+    Initialize-LabShortcutPropertyWriter
+    try {
+        [LabSetup.Shortcuts.ShortcutPropertyWriter]::SetAppUserModelProperties($ShortcutPath, $AppId, $command, $DisplayName, $IconResource)
+    }
+    catch {
+        Write-Warning ("Unable to stamp AppUserModelID on shortcut {0}: {1}" -f $ShortcutPath, $_.Exception.Message)
+    }
+}
+
 function New-LabTaskbarShortcut {
     param(
         [Parameter(Mandatory)]
@@ -50,7 +215,10 @@ function New-LabTaskbarShortcut {
         [Parameter(Mandatory)]
         [string]$ExecutablePath,
         [Parameter(Mandatory)]
-        [hashtable]$Config
+        [hashtable]$Config,
+        [string]$Arguments,
+        [string]$AppId,
+        [string]$IconPath
     )
 
     if ([string]::IsNullOrWhiteSpace($ExecutablePath)) {
@@ -63,6 +231,19 @@ function New-LabTaskbarShortcut {
     }
     catch {
         return $null
+    }
+
+    $resolvedIcon = $resolvedExe
+    if (-not [string]::IsNullOrWhiteSpace($IconPath)) {
+        try {
+            $resolvedIcon = (Resolve-Path -LiteralPath $IconPath -ErrorAction Stop).Path
+        }
+        catch {
+            $fallbackIcon = Resolve-ExecutableFromCandidates -Candidates @($IconPath)
+            if ($fallbackIcon) {
+                $resolvedIcon = $fallbackIcon
+            }
+        }
     }
 
     $shortcutRoot = Join-Path -Path $Config.programDataPath -ChildPath 'TaskbarShortcuts'
@@ -78,13 +259,26 @@ function New-LabTaskbarShortcut {
         $shortcut = $wscript.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = $resolvedExe
         $shortcut.WorkingDirectory = Split-Path -Path $resolvedExe -Parent
-        $shortcut.IconLocation = $resolvedExe
+        if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
+            $shortcut.Arguments = $Arguments
+        }
+        if (-not [string]::IsNullOrWhiteSpace($resolvedIcon)) {
+            $shortcut.IconLocation = $resolvedIcon
+        }
         $shortcut.Save()
     }
     finally {
         if ($wscript -is [__ComObject]) {
             [void][Runtime.InteropServices.Marshal]::ReleaseComObject($wscript)
         }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AppId)) {
+        $iconResource = $resolvedIcon
+        if ([string]::IsNullOrWhiteSpace($iconResource)) {
+            $iconResource = $resolvedExe
+        }
+        Set-LabShortcutAppId -ShortcutPath $shortcutPath -AppId $AppId -DisplayName $DisplayName -IconResource $iconResource -LaunchTarget $resolvedExe -LaunchArguments $Arguments
     }
 
     return $shortcutPath
@@ -134,7 +328,7 @@ function Get-LabTaskbarLayoutEntries {
 
         $shortcutPath = $request.ShortcutPath
         if (-not $shortcutPath) {
-            $shortcutPath = Resolve-LabShortcutPath -PreferredName $request.ShortcutName -DisplayName $displayName -CandidatePaths $request.CandidatePaths -CreationPolicy 'WhenMissing' -Config $Config -LogWriter $LogWriter
+            $shortcutPath = Resolve-LabShortcutPath -PreferredName $request.ShortcutName -DisplayName $displayName -CandidatePaths $request.CandidatePaths -CreationPolicy 'WhenMissing' -Config $Config -LogWriter $LogWriter -AppId $appId
             if ($shortcutPath) {
                 $request.ShortcutPath = $shortcutPath
             }
