@@ -17,7 +17,7 @@ $script:WingetDefaultAcceptableExitCodes = @(
     $script:WingetExitCodes.UpgradeVersionNotNewer,
     $script:WingetExitCodes.PackageAlreadyInstalled,
     $script:WingetExitCodes.NoApplicableInstaller
-) | Where-Object { $_ -ne $null } | Select-Object -Unique
+) | Where-Object { $null -ne $_ } | Select-Object -Unique
 
 function Confirm-LabAdministrator {
     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -385,7 +385,7 @@ function Invoke-Winget {
         $effectiveAcceptableCodes += $script:WingetDefaultAcceptableExitCodes
     }
     if ($effectiveAcceptableCodes) {
-        $effectiveAcceptableCodes = @($effectiveAcceptableCodes | Where-Object { $_ -ne $null } | Select-Object -Unique)
+        $effectiveAcceptableCodes = @($effectiveAcceptableCodes | Where-Object { $null -ne $_ } | Select-Object -Unique)
     }
 
     $isAcceptable = ($exitCode -eq 0)
@@ -436,7 +436,7 @@ function New-LabDirectory {
     }
 }
 
-function Ensure-LabDirectoryWritable {
+function Set-LabDirectoryWritable {
     param(
         [Parameter(Mandatory)]
         [string]$Path
@@ -810,7 +810,7 @@ function Test-LabTaskbarPinnedState {
     $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
     $shellItemList = New-Object System.Collections.Generic.List[object]
 
-    if ($shellItems -ne $null) {
+    if ($null -ne $shellItems) {
         if ($shellItems -is [System.Collections.IEnumerable] -and -not ($shellItems -is [string])) {
             foreach ($item in $shellItems) {
                 if ($null -ne $item) {
@@ -871,7 +871,7 @@ function Set-TaskbarPin {
         $shellItems = Get-LabTaskbarShellItems -CandidatePaths $CandidatePaths -AppId $AppId -ShortcutName $ShortcutName -DisplayName $DisplayName
         $shellItemList = New-Object System.Collections.Generic.List[object]
 
-        if ($shellItems -ne $null) {
+        if ($null -ne $shellItems) {
             if ($shellItems -is [System.Collections.IEnumerable] -and -not ($shellItems -is [string])) {
                 foreach ($item in $shellItems) {
                     if ($null -ne $item) {
@@ -1841,7 +1841,7 @@ function Initialize-VoltaDirectoryLayout {
 
     foreach ($path in $required) {
         if (-not [string]::IsNullOrWhiteSpace($path)) {
-            Ensure-LabDirectoryWritable -Path $path
+            Set-LabDirectoryWritable -Path $path
         }
     }
 }
@@ -1913,7 +1913,7 @@ function Reset-VoltaNodeCaches {
                 Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
-        Ensure-LabDirectoryWritable -Path $target
+        Set-LabDirectoryWritable -Path $target
     }
 
     $lockFile = Join-Path -Path $VoltaHome -ChildPath 'volta.lock'
@@ -2361,7 +2361,7 @@ function Get-MikTexConfigValue {
     }
 
     if ($output) {
-        $firstLine = ($output | Where-Object { $_ -ne $null } | Select-Object -First 1)
+        $firstLine = ($output | Where-Object { $null -ne $_ } | Select-Object -First 1)
         if ($null -ne $firstLine) {
             return $firstLine.Trim()
         }
