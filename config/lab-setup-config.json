@@ -37,6 +37,18 @@
             ]
         },
         {
+            "id": "Microsoft.WindowsTerminal",
+            "displayName": "Windows Terminal",
+            "silent": true,
+            "pinToTaskbar": true,
+            "appUserModelId": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App",
+            "taskbarTargets": [
+                "%SystemRoot%\\System32\\wt.exe",
+                "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe",
+                "shell:AppsFolder\\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
+            ]
+        },
+        {
             "id": "AnalogDevices.LTspice",
             "displayName": "LTspice",
             "scope": "user",
@@ -134,5 +146,16 @@
     "taskbar": {
         "retryCount": 3,
         "retryDelaySeconds": 10
+    },
+    "windowsTerminal": {
+        "configureDefaultProfile": true,
+        "defaultProfileSource": "Windows.Terminal.PowershellCore",
+        "defaultProfileName": "PowerShell 7",
+        "defaultProfileCommand": "%ProgramFiles%\\PowerShell\\7\\pwsh.exe",
+        "settingsPaths": [
+            "%LOCALAPPDATA%\\Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\LocalState\\settings.json",
+            "%LOCALAPPDATA%\\Packages\\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\\LocalState\\settings.json",
+            "%LOCALAPPDATA%\\Microsoft\\Windows Terminal\\settings.json"
+        ]
     }
 }

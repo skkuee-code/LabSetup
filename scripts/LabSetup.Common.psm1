@@ -7,6 +7,7 @@ $script:LabSetupModuleSegments = @(
     'modules\LabSetup.Winget.psm1',
     'modules\LabSetup.Packages.psm1',
     'modules\LabSetup.Shell.psm1',
+    'modules\LabSetup.WindowsTerminal.psm1',
     'modules\LabSetup.TaskbarPins.psm1',
     'modules\LabSetup.TaskbarLayout.psm1',
     'modules\LabSetup.Toolchain.Volta.psm1',
@@ -88,7 +89,8 @@ $LabSetupExportedFunctions = @(
     'Install-MikTexFromInstaller',
     'Get-MikTexConfigValue',
     'Test-MikTexAutoInstallResult',
-    'Set-MikTexConfiguration'
+    'Set-MikTexConfiguration',
+    'Set-WindowsTerminalDefaultProfile'
 )
 
 Export-ModuleMember -Function $LabSetupExportedFunctions

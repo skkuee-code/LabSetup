@@ -109,6 +109,8 @@ try {
         Write-LabLog -Message 'Skipping taskbar pinning (requested).' -LogWriter $logWriter
     }
 
+    Set-WindowsTerminalDefaultProfile -Config $config -LogWriter $logWriter
+
     $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     if ($machinePath) {
         $env:Path = $machinePath
