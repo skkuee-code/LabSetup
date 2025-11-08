@@ -291,6 +291,20 @@ function Invoke-ProcessWithSpinner {
     return $process
 }
 
+function Get-LabProcessExitCode {
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.Process]$Process
+    )
+
+    try {
+        return [int]$Process.ExitCode
+    }
+    catch {
+        return $null
+    }
+}
+
 function Invoke-Winget {
     param(
         [Parameter(Mandatory)]
@@ -1287,6 +1301,44 @@ function Get-VoltaNodeInstallArguments {
     return @('install', "node@$normalized")
 }
 
+function Get-VoltaPackageDescriptor {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Identifier
+    )
+
+    $trimmed = if ($Identifier) { $Identifier.Trim() } else { '' }
+    $name = $trimmed
+    $version = $null
+
+    if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+        if ($trimmed.StartsWith('@')) {
+            $slashIndex = $trimmed.IndexOf('/', 1)
+            if ($slashIndex -gt 0) {
+                $lastAtIndex = $trimmed.LastIndexOf('@')
+                if ($lastAtIndex -gt $slashIndex) {
+                    $name = $trimmed.Substring(0, $lastAtIndex)
+                    $version = $trimmed.Substring($lastAtIndex + 1)
+                }
+            }
+        }
+        else {
+            $lastAtIndex = $trimmed.LastIndexOf('@')
+            if ($lastAtIndex -gt 0) {
+                $name = $trimmed.Substring(0, $lastAtIndex)
+                $version = $trimmed.Substring($lastAtIndex + 1)
+            }
+        }
+    }
+
+    return @{
+        Identifier   = $trimmed
+        Name         = $name
+        Version      = $version
+        DisplayLabel = $trimmed
+    }
+}
+
 function Test-VoltaToolPresence {
     param(
         [Parameter(Mandatory)]
@@ -1326,17 +1378,26 @@ function Test-VoltaInstallResult {
         [System.Diagnostics.Process]$Process,
         [Parameter(Mandatory)]
         [string]$VoltaExe,
-        [Parameter(Mandatory)]
-        [string]$ToolName,
         [string]$ExpectedVersion,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [string]$ListTarget,
+        [string]$DisplayLabel
     )
 
-    if ($Process.ExitCode -eq 0) {
+    $exitCode = Get-LabProcessExitCode -Process $Process
+    if ($exitCode -eq 0) {
         return $true
     }
 
-    $listArgs = @('list', $ToolName, '--format', 'plain')
+    $label = if ([string]::IsNullOrWhiteSpace($DisplayLabel)) { $ListTarget } else { $DisplayLabel }
+    $exitCodeDisplay = if ($null -eq $exitCode) { 'unknown' } else { $exitCode }
+
+    $listArgs = @('list')
+    if (-not [string]::IsNullOrWhiteSpace($ListTarget)) {
+        $listArgs += $ListTarget
+    }
+    $listArgs += @('--format', 'plain')
+
     $listOutput = $null
     $listExitCode = -1
 
@@ -1351,13 +1412,13 @@ function Test-VoltaInstallResult {
 
     $listText = if ($listOutput) { ($listOutput -join [Environment]::NewLine).Trim() } else { $null }
 
-    if ($listExitCode -eq 0 -and (Test-VoltaToolPresence -ToolName $ToolName -ExpectedVersion $ExpectedVersion -ListOutput $listText)) {
-        Write-LabLog -Message ("Volta returned exit code {0} installing {1}, but 'volta list' shows the tool is present; continuing." -f $Process.ExitCode, $ToolName) -LogWriter $LogWriter
+    if ($listExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($ListTarget) -and (Test-VoltaToolPresence -ToolName $ListTarget -ExpectedVersion $ExpectedVersion -ListOutput $listText)) {
+        Write-LabLog -Message ("Volta returned exit code {0} installing {1}, but 'volta list' shows the tool is present; continuing." -f $exitCodeDisplay, $label) -LogWriter $LogWriter
         return $true
     }
 
     $statusDetail = if ($listText) { $listText } else { "no output from 'volta list'" }
-    Write-LabLog -Message ("Volta exit code {0} installing {1}. 'volta list' result: {2}" -f $Process.ExitCode, $ToolName, $statusDetail) -LogWriter $LogWriter
+    Write-LabLog -Message ("Volta exit code {0} installing {1}. 'volta list' result: {2}" -f $exitCodeDisplay, $label, $statusDetail) -LogWriter $LogWriter
     return $false
 }
 
@@ -1404,7 +1465,8 @@ function Set-VoltaToolchain {
             }
 
             $nodeProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList $nodeArgs -Activity "Configuring Volta Node $($Config.volta.nodeVersion)"
-            $nodeInstallSucceeded = Test-VoltaInstallResult -Process $nodeProcess -VoltaExe $voltaExe -ToolName 'node' -ExpectedVersion $Config.volta.nodeVersion -LogWriter $LogWriter
+            $nodeDisplayLabel = if ($Config.volta.nodeVersion) { "node@$($Config.volta.nodeVersion)" } else { 'node' }
+            $nodeInstallSucceeded = Test-VoltaInstallResult -Process $nodeProcess -VoltaExe $voltaExe -ExpectedVersion $Config.volta.nodeVersion -LogWriter $LogWriter -ListTarget 'node' -DisplayLabel $nodeDisplayLabel
         }
 
         if (-not $nodeInstallSucceeded) {
@@ -1414,10 +1476,28 @@ function Set-VoltaToolchain {
 
     if ($Config.volta.globalPackages) {
         foreach ($pkg in $Config.volta.globalPackages) {
-            Write-LabLog -Message "Installing global Volta package $pkg ..." -LogWriter $LogWriter
-            $pkgProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList @('install', $pkg) -Activity "Installing Volta package $pkg"
-            if ($pkgProcess.ExitCode -ne 0) {
-                throw "Volta failed to install global package $pkg."
+            if ([string]::IsNullOrWhiteSpace($pkg)) { continue }
+            $pkgDescriptor = Get-VoltaPackageDescriptor -Identifier $pkg
+            $pkgLabel = if ($pkgDescriptor.DisplayLabel) { $pkgDescriptor.DisplayLabel } else { $pkg }
+            $pkgAttempt = 0
+            $pkgMaxAttempts = 2
+            $pkgInstalled = $false
+
+            while (-not $pkgInstalled -and $pkgAttempt -lt $pkgMaxAttempts) {
+                $pkgAttempt++
+                if ($pkgAttempt -gt 1) {
+                    Write-LabLog -Message "Retrying Volta global package $pkgLabel (attempt $pkgAttempt of $pkgMaxAttempts)..." -LogWriter $LogWriter
+                }
+                else {
+                    Write-LabLog -Message "Installing global Volta package $pkgLabel ..." -LogWriter $LogWriter
+                }
+
+                $pkgProcess = Invoke-ProcessWithSpinner -FilePath $voltaExe -ArgumentList @('install', $pkgDescriptor.Identifier) -Activity "Installing Volta package $pkgLabel"
+                $pkgInstalled = Test-VoltaInstallResult -Process $pkgProcess -VoltaExe $voltaExe -ExpectedVersion $pkgDescriptor.Version -LogWriter $LogWriter -ListTarget $pkgDescriptor.Name -DisplayLabel $pkgLabel
+            }
+
+            if (-not $pkgInstalled) {
+                throw "Volta failed to install global package $pkgLabel."
             }
         }
     }
