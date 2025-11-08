@@ -247,7 +247,8 @@ function Write-LabLog {
 function Add-MachinePathEntry {
     param(
         [Parameter(Mandatory)]
-        [string]$Path
+        [string]$Path,
+        [switch]$Prepend
     )
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
@@ -274,7 +275,12 @@ function Add-MachinePathEntry {
     }
 
     if (-not $machineHasTarget) {
-        $machineSegments = $machineSegments + $target
+        if ($Prepend) {
+            $machineSegments = @($target) + $machineSegments
+        }
+        else {
+            $machineSegments = $machineSegments + $target
+        }
         [Environment]::SetEnvironmentVariable('Path', ($machineSegments -join ';'), 'Machine')
     }
 
@@ -293,7 +299,13 @@ function Add-MachinePathEntry {
     }
 
     if (-not $processHasTarget) {
-        $env:Path = ($processSegments + $target) -join ';'
+        if ($Prepend) {
+            $processSegments = @($target) + $processSegments
+        }
+        else {
+            $processSegments = $processSegments + $target
+        }
+        $env:Path = ($processSegments -join ';')
     }
 }
 
