@@ -76,6 +76,31 @@ function Get-StartMenuShortcutPath {
     return $null
 }
 
+function Normalize-LabContextMenuLabel {
+    param(
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Label)) {
+        return ''
+    }
+
+    $normalized = ($Label -replace '&', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return ''
+    }
+
+    $options = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(
+        $normalized,
+        '\s*[\(\uFF08]\s*[\p{L}\p{Nd}]{1,5}\s*[\)\uFF09]\s*$',
+        '',
+        $options
+    ).TrimEnd()
+
+    return $normalized
+}
+
 function Get-LabTaskbarShellItems {
     param(
         [string[]]$CandidatePaths = @(),
@@ -189,6 +214,18 @@ function Invoke-TaskbarVerb {
 
     $pinLabels = @('Pin to taskbar', 'タスク バーにピン留めする', 'タスクバーにピン留めする')
     $unpinLabels = @('Unpin from taskbar', 'タスク バーからピン留めを外す', 'タスクバーからピン留めを外す')
+    $normalizedPinLabels = @($pinLabels | ForEach-Object {
+            $label = Normalize-LabContextMenuLabel -Label $_
+            if (-not [string]::IsNullOrWhiteSpace($label)) {
+                $label.ToLowerInvariant()
+            }
+        } | Where-Object { $_ })
+    $normalizedUnpinLabels = @($unpinLabels | ForEach-Object {
+            $label = Normalize-LabContextMenuLabel -Label $_
+            if (-not [string]::IsNullOrWhiteSpace($label)) {
+                $label.ToLowerInvariant()
+            }
+        } | Where-Object { $_ })
 
     foreach ($verb in $ShellItem.Verbs()) {
         $canonicalProperty = $verb.PSObject.Properties['CanonicalName']
@@ -198,21 +235,24 @@ function Invoke-TaskbarVerb {
             return $true
         }
         $nameProperty = $verb.PSObject.Properties['Name']
-        $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
-        $normalized = ($verbName -replace '&', '').Trim()
+        $verbDisplayName = if ($nameProperty) { $nameProperty.Value } else { '' }
+        $normalized = Normalize-LabContextMenuLabel -Label $verbDisplayName
+        if ([string]::IsNullOrWhiteSpace($normalized)) {
+            continue
+        }
         $normalizedLower = $normalized.ToLowerInvariant()
         switch ($VerbName) {
             'taskbarpin' {
-                foreach ($label in $pinLabels) {
-                    if ($normalizedLower -eq $label.ToLowerInvariant()) {
+                foreach ($label in $normalizedPinLabels) {
+                    if ($normalizedLower -eq $label) {
                         $verb.DoIt()
                         return $true
                     }
                 }
             }
             'taskbarunpin' {
-                foreach ($label in $unpinLabels) {
-                    if ($normalizedLower -eq $label.ToLowerInvariant()) {
+                foreach ($label in $normalizedUnpinLabels) {
+                    if ($normalizedLower -eq $label) {
                         $verb.DoIt()
                         return $true
                     }
@@ -231,6 +271,12 @@ function Test-TaskbarPinned {
     )
 
     $unpinLabels = @('Unpin from taskbar', 'タスク バーからピン留めを外す', 'タスクバーからピン留めを外す')
+    $normalizedUnpinLabels = @($unpinLabels | ForEach-Object {
+            $label = Normalize-LabContextMenuLabel -Label $_
+            if (-not [string]::IsNullOrWhiteSpace($label)) {
+                $label.ToLowerInvariant()
+            }
+        } | Where-Object { $_ })
 
     foreach ($verb in $ShellItem.Verbs()) {
         $canonicalProperty = $verb.PSObject.Properties['CanonicalName']
@@ -240,10 +286,13 @@ function Test-TaskbarPinned {
         }
         $nameProperty = $verb.PSObject.Properties['Name']
         $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
-        $normalized = ($verbName -replace '&', '').Trim()
+        $normalized = Normalize-LabContextMenuLabel -Label $verbName
+        if ([string]::IsNullOrWhiteSpace($normalized)) {
+            continue
+        }
         $normalizedLower = $normalized.ToLowerInvariant()
-        foreach ($label in $unpinLabels) {
-            if ($normalizedLower -eq $label.ToLowerInvariant()) {
+        foreach ($label in $normalizedUnpinLabels) {
+            if ($normalizedLower -eq $label) {
                 return $true
             }
         }

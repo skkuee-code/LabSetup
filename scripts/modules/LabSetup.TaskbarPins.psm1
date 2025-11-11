@@ -768,6 +768,7 @@ function Set-LabTaskbarPins {
     $failedPinCount = 0
     $layoutRequests = New-Object System.Collections.Generic.List[pscustomobject]
     $layoutOnlyCount = 0
+    $layoutApplied = $false
 
     if ($PreservedPins) {
         $PreservedPins = @($PreservedPins | Where-Object { $_ })
@@ -848,12 +849,20 @@ function Set-LabTaskbarPins {
             Write-LabLog -Message ("Preserving {0} existing taskbar pin(s) during layout fallback." -f $PreservedPins.Count) -LogWriter $LogWriter
         }
 
-        $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $layoutInputs -LogWriter $LogWriter
-        if ($layoutApplied) {
+        $layoutUpdateSucceeded = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $layoutInputs -LogWriter $LogWriter
+        if ($layoutUpdateSucceeded) {
+            $layoutApplied = $true
             Write-LabLog -Message 'Applied LayoutModification fallback and reset Explorer to enforce taskbar pins.' -LogWriter $LogWriter
         }
         else {
             Write-LabLog -Message 'Unable to apply LayoutModification fallback; taskbar pins may be incomplete.' -LogWriter $LogWriter
         }
+    }
+
+    return [pscustomobject]@{
+        PinRequests    = $pinRequests.ToArray()
+        LayoutApplied  = $layoutApplied
+        FailedPinCount = $failedPinCount
+        LayoutOnlyCount = $layoutOnlyCount
     }
 }

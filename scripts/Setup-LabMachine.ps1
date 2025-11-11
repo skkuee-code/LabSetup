@@ -105,8 +105,12 @@ try {
     }
 
     if (-not $SkipTaskbarPins) {
-        Set-LabTaskbarPins -Config $config -LogWriter $logWriter -PreservedPins $preservedTaskbarPins
-        Set-LabExtraTaskbarPins -Config $config -LogWriter $logWriter
+        $taskbarPinResult = Set-LabTaskbarPins -Config $config -LogWriter $logWriter -PreservedPins $preservedTaskbarPins
+        $baseTaskbarRequests = @()
+        if ($taskbarPinResult -and $taskbarPinResult.PinRequests) {
+            $baseTaskbarRequests = @($taskbarPinResult.PinRequests | Where-Object { $_ })
+        }
+        Set-LabExtraTaskbarPins -Config $config -LogWriter $logWriter -BaseRequests $baseTaskbarRequests -PreservedPins $preservedTaskbarPins
     } else {
         Write-LabLog -Message 'Skipping taskbar pinning (requested).' -LogWriter $logWriter
     }

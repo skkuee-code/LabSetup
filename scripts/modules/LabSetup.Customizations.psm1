@@ -204,7 +204,9 @@ function Set-LabExtraTaskbarPins {
     param(
         [Parameter(Mandatory)]
         [hashtable]$Config,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [pscustomobject[]]$BaseRequests = @(),
+        [pscustomobject[]]$PreservedPins = @()
     )
 
     $entries = @()
@@ -212,6 +214,23 @@ function Set-LabExtraTaskbarPins {
         $entries = @($Config.taskbarExtraPins | ForEach-Object { $_ })
     }
     if ($entries.Count -eq 0) { return }
+
+    if ($BaseRequests) {
+        $BaseRequests = @($BaseRequests | Where-Object { $_ })
+    }
+    else {
+        $BaseRequests = @()
+    }
+
+    if ($PreservedPins) {
+        $PreservedPins = @($PreservedPins | Where-Object { $_ })
+    }
+    else {
+        $PreservedPins = @()
+    }
+
+    $extraRequests = New-Object System.Collections.Generic.List[pscustomobject]
+    $failedRequests = New-Object System.Collections.Generic.List[pscustomobject]
 
     foreach ($entry in $entries) {
         if (-not ($entry -is [System.Collections.IDictionary])) { continue }
@@ -259,6 +278,8 @@ function Set-LabExtraTaskbarPins {
 
         if (-not $pinRequest) { continue }
 
+        [void]$extraRequests.Add($pinRequest)
+
         $pinned = $false
         try {
             $pinned = Set-TaskbarPin -DisplayName $pinRequest.DisplayName -Config $Config -CandidatePaths $pinRequest.CandidatePaths -AppId $pinRequest.AppId -ShortcutName $pinRequest.ShortcutName -LogWriter $LogWriter
@@ -270,6 +291,32 @@ function Set-LabExtraTaskbarPins {
 
         if (-not $pinned) {
             Write-LabLog -Message ("Unable to pin {0} to the taskbar." -f $displayName) -LogWriter $LogWriter
+            [void]$failedRequests.Add($pinRequest)
+        }
+    }
+
+    if ($failedRequests.Count -gt 0) {
+        $combinedRequests = @()
+        if ($BaseRequests -and $BaseRequests.Count -gt 0) {
+            $combinedRequests += $BaseRequests
+        }
+        if ($extraRequests.Count -gt 0) {
+            $combinedRequests += $extraRequests.ToArray()
+        }
+
+        $layoutInputs = Merge-LabTaskbarRequests -Primary $combinedRequests -Secondary $PreservedPins
+        Write-LabLog -Message ("Applying LayoutModification fallback for extra taskbar pin(s); {0} entry(ies) require layout mode." -f $failedRequests.Count) -LogWriter $LogWriter
+
+        if ($PreservedPins -and $PreservedPins.Count -gt 0) {
+            Write-LabLog -Message ("Preserving {0} existing taskbar pin(s) during extra-pin layout fallback." -f $PreservedPins.Count) -LogWriter $LogWriter
+        }
+
+        $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $layoutInputs -LogWriter $LogWriter
+        if ($layoutApplied) {
+            Write-LabLog -Message 'Applied LayoutModification fallback for extra taskbar pin(s).' -LogWriter $LogWriter
+        }
+        else {
+            Write-LabLog -Message 'Unable to apply LayoutModification fallback for extra taskbar pin(s); taskbar pins may be incomplete.' -LogWriter $LogWriter
         }
     }
 }
