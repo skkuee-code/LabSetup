@@ -231,6 +231,8 @@ function Set-LabExtraTaskbarPins {
 
     $extraRequests = New-Object System.Collections.Generic.List[pscustomobject]
     $failedRequests = New-Object System.Collections.Generic.List[pscustomobject]
+    $layoutOnlyCount = 0
+    $failedPinCount = 0
 
     foreach ($entry in $entries) {
         if (-not ($entry -is [System.Collections.IDictionary])) { continue }
@@ -263,6 +265,16 @@ function Set-LabExtraTaskbarPins {
             $package['taskbarShortcutName'] = $shortcutName
         }
 
+        $pinMode = Get-OptionalPropertyValue -InputObject $entry -PropertyName 'taskbarPinMode'
+        if ($pinMode) {
+            $package['taskbarPinMode'] = $pinMode
+        }
+
+        $forceShortcut = Get-OptionalPropertyValue -InputObject $entry -PropertyName 'taskbarForceShortcut'
+        if ($null -ne $forceShortcut) {
+            $package['taskbarForceShortcut'] = [bool]$forceShortcut
+        }
+
         if (-not $package.id) {
             $package.id = $displayName
         }
@@ -280,18 +292,41 @@ function Set-LabExtraTaskbarPins {
 
         [void]$extraRequests.Add($pinRequest)
 
+        if ($pinRequest.PinMode -eq 'Layout') {
+            $alreadyPinned = $false
+            try {
+                $alreadyPinned = Test-LabTaskbarPinnedState -CandidatePaths $pinRequest.CandidatePaths -AppId $pinRequest.AppId -ShortcutName $pinRequest.ShortcutName -DisplayName $pinRequest.DisplayName
+            }
+            catch {
+                $alreadyPinned = $false
+            }
+
+            if ($alreadyPinned) {
+                Write-LabLog -Message ("{0} already satisfies the layout-only taskbar pin requirement; skipping layout update." -f $displayName) -LogWriter $LogWriter
+                continue
+            }
+
+            Write-LabLog -Message ("{0} requires layout-only taskbar pinning; queuing LayoutModification fallback." -f $displayName) -LogWriter $LogWriter
+            [void]$failedRequests.Add($pinRequest)
+            $layoutOnlyCount++
+            continue
+        }
+
         $pinned = $false
         try {
             $pinned = Set-TaskbarPin -DisplayName $pinRequest.DisplayName -Config $Config -CandidatePaths $pinRequest.CandidatePaths -AppId $pinRequest.AppId -ShortcutName $pinRequest.ShortcutName -LogWriter $LogWriter
         }
         catch {
             Write-LabLog -Message ("Taskbar pin attempt for {0} failed: {1}" -f $displayName, $_.Exception.Message) -LogWriter $LogWriter
+            [void]$failedRequests.Add($pinRequest)
+            $failedPinCount++
             continue
         }
 
         if (-not $pinned) {
             Write-LabLog -Message ("Unable to pin {0} to the taskbar." -f $displayName) -LogWriter $LogWriter
             [void]$failedRequests.Add($pinRequest)
+            $failedPinCount++
         }
     }
 
@@ -305,7 +340,19 @@ function Set-LabExtraTaskbarPins {
         }
 
         $layoutInputs = Merge-LabTaskbarRequests -Primary $combinedRequests -Secondary $PreservedPins
-        Write-LabLog -Message ("Applying LayoutModification fallback for extra taskbar pin(s); {0} entry(ies) require layout mode." -f $failedRequests.Count) -LogWriter $LogWriter
+
+        $fallbackReasons = New-Object System.Collections.Generic.List[string]
+        if ($layoutOnlyCount -gt 0) {
+            $fallbackReasons.Add("{0} layout-only pin(s)" -f $layoutOnlyCount)
+        }
+        if ($failedPinCount -gt 0) {
+            $fallbackReasons.Add("{0} failed shell pin attempt(s)" -f $failedPinCount)
+        }
+        if ($fallbackReasons.Count -eq 0) {
+            $fallbackReasons.Add('taskbar pin requirements')
+        }
+
+        Write-LabLog -Message ("Applying LayoutModification fallback for extra taskbar pin(s); {0}." -f ($fallbackReasons -join ' and ')) -LogWriter $LogWriter
 
         if ($PreservedPins -and $PreservedPins.Count -gt 0) {
             Write-LabLog -Message ("Preserving {0} existing taskbar pin(s) during extra-pin layout fallback." -f $PreservedPins.Count) -LogWriter $LogWriter

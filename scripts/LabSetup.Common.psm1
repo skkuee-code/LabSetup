@@ -67,6 +67,7 @@ $LabSetupExportedFunctions = @(
     'Get-OrderedTaskbarCandidates',
     'Resolve-LabShortcutPath',
     'Get-LabTaskbarPinRequest',
+    'Merge-LabTaskbarRequests',
     'Set-LabTaskbarPins',
     'Get-LabExistingTaskbarPins',
     'Convert-ToTaskbarLayoutPath',
