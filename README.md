@@ -54,11 +54,11 @@ LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリ�
     ```powershell
     C:\ProgramData\LabSetup\scripts\Setup-LabMachine.ps1
     ```
-    -   Slack、Visual Studio Code、Google Chrome、LTspice、Git、Git LFS、Quarto、MiKTeXを `winget install --scope machine` でインストールし、パッケージがProgram Files以下に配置されるようにします。
+    -   Slack、Visual Studio Code、Google Chrome、LTspice、Git、Git LFS、Quartoを `winget install --scope machine` でインストールし、パッケージがProgram Files以下に配置されるようにします。
     -   コミュニティのwingetフィードで公開されていないため、ベンダーのMSIからLayoutEditorをダウンロードしてインストールします。
     -   uvで管理されるPython（`uv python install 3.12`）を設定し、共有インタープリターのために `UV_PYTHON_INSTALL_DIR` をProgramData以下に設定します。
     -   Voltaのツールチェーンの場所をProgramData内に設定し、Node LTSをインストールし、`volta install` を介してグローバルにTypeScriptを追加します。
-    -   `initexmf --admin` コマンドでMiKTeXの自動パッケージインストールを有効にし、ファイル名データベースを更新します。
+    -   `install-tl-windows.exe --profile ...` を使ってTeX Live (scheme-full) を `C:\texlive\2025` に展開し、`tlmgr option repository`, `tlmgr path add --windowsmode=admin`, `mktexlsr` でパスとファイル名データベースを整えます。
     -   実行可能ファイルのパスを確認した後、Slack、VS Code、Chrome、LTspice、LayoutEditorをタスクバーにピン留めします。
     -   コンソール出力を `C:\ProgramData\LabSetup\logs\LabSetup_yyyyMMdd_HHmmss.log` にストリーミングします。
 
@@ -75,7 +75,7 @@ LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリ�
 | **Voltaツールチェーン** | `VOLTA_HOME` を設定し、`bin` を作成し、PATHに追加し、Volta経由でNode LTSとTypeScriptをインストールします。 |
 | **uvツールチェーン** | `UV_HOME`、`UV_PYTHON_INSTALL_DIR` を設定し、`bin` をPATHに追加し、uvを介してPython 3.12をインストールします。 |
 | **Git + LFS** | wingetがGitとGit LFSをインストールした後、`git lfs install --system` を実行します。
-| **TeXプロビジョニング** | MiKTeX用に `initexmf --admin --set-config-value [MPM]AutoInstall=1` と `initexmf --admin --update-fndb` を実行します。 |
+| **TeXプロビジョニング** | TeX Live用に `install-tl-windows.exe --profile <ProgramData\cache\texlive.profile>` を起動し、`tlmgr option repository ...` と `tlmgr path add --windowsmode=admin` 後に `mktexlsr` を実行します。 |
 | **ロギング** | すべてのアクションは、標準出力とともに `ProgramData\LabSetup\logs` 以下にログ記録されます。
 
 ---
@@ -86,7 +86,7 @@ LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリ�
 -   `volta`: 目的のNodeリリース（`nodeVersion`）と、Volta経由でインストールするグローバルパッケージ。
 -   `uv`: プロビジョニングするPythonのバージョン。それぞれが `uv python install` でインストールされ、ProgramDataを介して共有されます。
 -   `git`: `git lfs install --system` を実行するための `configureLfs` の切り替え。
--   `tex`: MiKTeX自動化のためのフラグ（`autoInstallMissingPackages`、`refreshFileDatabase`）。
+-   `tex`: TeX Liveディストリビューションの設定（`installDir`、`profile.lines`、`tlmgr.repository`、`postInstall.refreshFileDatabase` など）。
 -   `taskbar`: ピン留め操作の再試行回数と遅延（秒）。
 
 バージョンを上げたり、ソフトウェアを追加したりする場合は、JSONファイルを更新してから `Setup-LabMachine.ps1` を再実行して変更を適用します。
@@ -136,7 +136,7 @@ LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリ�
 -   **スコープに関するwingetエラー**: 一部のマニフェストはマシンインストールをサポートしていません。新しいパッケージを追加する前にサポートを確認してください。
 -   **タスクバーのピンが見つからない**: Explorerがショートカットの作成を完了した後、`Setup-LabMachine.ps1 -SkipVolta -SkipUv -SkipTeX -SkipGitLfs` を再実行して、ピン留めフェーズに集中します。
 -   **uvがPATHにない**: 現在のセッションでマシンのPATHを再読み込みするか（`$env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine')`）、再起動して環境の変更を継承します。
--   **MiKTeXがパッケージを要求する**: `Setup-LabMachine.ps1` を再実行するか、`initexmf --admin` コマンドを手動で実行してAutoInstallを再度有効にします。
+-   **TeX Liveがパッケージを要求する**: `Setup-LabMachine.ps1` を再実行するか、`tlmgr install <package>` を管理者PowerShellで実行して不足分を追加します。
 -   **LayoutEditorの更新が必要**: 設定ファイル内のMSI URLを置き換えます。スクリプトは新しいビルドをキャッシュにダウンロードし、`msiexec` を介して再インストールします。
 
 ---

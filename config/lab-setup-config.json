@@ -121,11 +121,6 @@
             "id": "Posit.Quarto",
             "displayName": "Quarto",
             "silent": true
-        },
-        {
-            "id": "MiKTeX.MiKTeX",
-            "displayName": "MiKTeX",
-            "silent": false
         }
     ],
     "volta": {
@@ -144,16 +139,43 @@
         "configureLfs": true
     },
     "tex": {
-        "autoInstallMissingPackages": true,
-        "refreshFileDatabase": true,
-        "installer": {
-            "downloadUrl": "https://mirrors.ctan.org/systems/win32/miktex/setup/windows-x64/basic-miktex-24.1-x64.exe",
-            "expectedFileName": "basic-miktex-24.1-x64.exe",
-            "arguments": [
-                "--unattended",
-                "--shared",
-                "--package-set=basic"
+        "distribution": "texlive",
+        "installDir": "C:\\\\texlive\\\\2025",
+        "binRelativePath": "bin\\\\windows",
+        "profile": {
+            "lines": [
+                "# TeX Live profile generated for LabSetup",
+                "selected_scheme scheme-full",
+                "TEXDIR C:/texlive/2025",
+                "TEXMFAPP C:/texlive/texmf-var",
+                "TEXMFCONFIG C:/texlive/texmf-config",
+                "TEXMFDIST C:/texlive/2025/texmf-dist",
+                "TEXMFLOCAL C:/texlive/texmf-local",
+                "TEXMFSYSCONFIG C:/texlive/2025/texmf-config",
+                "TEXMFSYSVAR C:/texlive/2025/texmf-var",
+                "TEXMFVAR C:/texlive/texmf-var",
+                "binary_win32 1",
+                "instopt_adjustpath 0",
+                "instopt_letter 0",
+                "instopt_portable 0",
+                "tlpdbopt_autobackup 0",
+                "tlpdbopt_install_docfiles 1",
+                "tlpdbopt_install_srcfiles 1"
             ]
+        },
+        "installer": {
+            "downloadUrl": "https://mirror.ctan.org/systems/texlive/tlnet/install-tl-windows.exe",
+            "expectedFileName": "install-tl-windows.exe",
+            "arguments": [
+                "--no-gui"
+            ]
+        },
+        "tlmgr": {
+            "repository": "https://mirror.ctan.org/systems/texlive/tlnet",
+            "pathWindowsMode": "admin"
+        },
+        "postInstall": {
+            "refreshFileDatabase": true
         }
     },
     "publicDesktopShortcuts": [

@@ -14,7 +14,7 @@ $script:LabSetupModuleSegments = @(
     'modules\LabSetup.Toolchain.Volta.psm1',
     'modules\LabSetup.Toolchain.Uv.psm1',
     'modules\LabSetup.Toolchain.Git.psm1',
-    'modules\LabSetup.Miktex.psm1'
+    'modules\LabSetup.TeXLive.psm1'
 )
 
 $script:ImportedLabSetupModules = @()
@@ -92,10 +92,24 @@ $LabSetupExportedFunctions = @(
     'Test-UvPythonInstallResult',
     'Set-UvToolchain',
     'Set-GitLfsConfiguration',
-    'Install-MikTexFromInstaller',
-    'Get-MikTexConfigValue',
-    'Test-MikTexAutoInstallResult',
-    'Set-MikTexConfiguration',
+    'Resolve-TeXLivePathValue',
+    'Get-TeXLiveBinDirectory',
+    'Get-TeXLiveUtilityCandidates',
+    'Resolve-TeXLiveUtility',
+    'Get-TeXLiveInstallerPayload',
+    'Write-TeXLiveProfile',
+    'Install-TeXLiveDistribution',
+    'Invoke-TeXLiveUtility',
+    'Get-MiKTeXExecutableCandidates',
+    'Resolve-MiKTeXUtility',
+    'Get-MiKTeXPathCandidates',
+    'Test-MiKTeXPresence',
+    'Remove-MiKTeXResidualPaths',
+    'Uninstall-MiKTeXInstallation',
+    'Configure-TeXLiveRepository',
+    'Configure-TeXLivePath',
+    'Refresh-TeXLiveFileDatabase',
+    'Set-TeXLiveConfiguration',
     'Set-WindowsTerminalDefaultProfile'
 )
 

@@ -99,7 +99,7 @@ try {
     }
 
     if (-not $SkipTeX) {
-        Set-MikTexConfiguration -Config $config -LogWriter $logWriter
+        Set-TeXLiveConfiguration -Config $config -LogWriter $logWriter
     } else {
         Write-LabLog -Message 'Skipping TeX post-configuration (requested).' -LogWriter $logWriter
     }
