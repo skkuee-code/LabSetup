@@ -261,6 +261,53 @@ function Get-LabAppxShortcutIcon {
     return $iconPath
 }
 
+function Get-LabShortcutPathFromCandidates {
+    param(
+        [string[]]$CandidatePaths = @()
+    )
+
+    if (-not $CandidatePaths -or $CandidatePaths.Count -eq 0) {
+        return $null
+    }
+
+    foreach ($candidate in $CandidatePaths) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+
+        $expanded = $candidate
+        try {
+            $expanded = [Environment]::ExpandEnvironmentVariables($candidate)
+        }
+        catch {
+            # Fall back to the original text if expansion fails.
+            $expanded = $candidate
+        }
+
+        $extension = $null
+        try {
+            $extension = [System.IO.Path]::GetExtension($expanded)
+        }
+        catch {
+            $extension = $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace($extension)) { continue }
+        if (-not $extension.Equals('.lnk', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+        try {
+            if (Test-Path -LiteralPath $expanded -PathType Leaf) {
+                return (Resolve-Path -LiteralPath $expanded -ErrorAction Stop).Path
+            }
+        }
+        catch {
+            if (Test-Path -LiteralPath $expanded -PathType Leaf) {
+                return $expanded
+            }
+        }
+    }
+
+    return $null
+}
+
 function Resolve-LabShortcutPath {
     param(
         [string]$PreferredName,
@@ -286,6 +333,11 @@ function Resolve-LabShortcutPath {
         if ($existing) {
             return $existing
         }
+    }
+
+    $candidateShortcut = Get-LabShortcutPathFromCandidates -CandidatePaths $CandidatePaths
+    if ($candidateShortcut) {
+        return $candidateShortcut
     }
 
     if ($CreationPolicy -eq 'Never' -or -not $CandidatePaths -or $CandidatePaths.Count -eq 0) {
