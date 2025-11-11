@@ -76,7 +76,7 @@ function Get-StartMenuShortcutPath {
     return $null
 }
 
-function Normalize-LabContextMenuLabel {
+function Convert-LabContextMenuLabel {
     param(
         [string]$Label
     )
@@ -215,13 +215,13 @@ function Invoke-TaskbarVerb {
     $pinLabels = @('Pin to taskbar', 'タスク バーにピン留めする', 'タスクバーにピン留めする')
     $unpinLabels = @('Unpin from taskbar', 'タスク バーからピン留めを外す', 'タスクバーからピン留めを外す')
     $normalizedPinLabels = @($pinLabels | ForEach-Object {
-            $label = Normalize-LabContextMenuLabel -Label $_
+            $label = Convert-LabContextMenuLabel -Label $_
             if (-not [string]::IsNullOrWhiteSpace($label)) {
                 $label.ToLowerInvariant()
             }
         } | Where-Object { $_ })
     $normalizedUnpinLabels = @($unpinLabels | ForEach-Object {
-            $label = Normalize-LabContextMenuLabel -Label $_
+            $label = Convert-LabContextMenuLabel -Label $_
             if (-not [string]::IsNullOrWhiteSpace($label)) {
                 $label.ToLowerInvariant()
             }
@@ -236,7 +236,7 @@ function Invoke-TaskbarVerb {
         }
         $nameProperty = $verb.PSObject.Properties['Name']
         $verbDisplayName = if ($nameProperty) { $nameProperty.Value } else { '' }
-        $normalized = Normalize-LabContextMenuLabel -Label $verbDisplayName
+        $normalized = Convert-LabContextMenuLabel -Label $verbDisplayName
         if ([string]::IsNullOrWhiteSpace($normalized)) {
             continue
         }
@@ -272,7 +272,7 @@ function Test-TaskbarPinned {
 
     $unpinLabels = @('Unpin from taskbar', 'タスク バーからピン留めを外す', 'タスクバーからピン留めを外す')
     $normalizedUnpinLabels = @($unpinLabels | ForEach-Object {
-            $label = Normalize-LabContextMenuLabel -Label $_
+            $label = Convert-LabContextMenuLabel -Label $_
             if (-not [string]::IsNullOrWhiteSpace($label)) {
                 $label.ToLowerInvariant()
             }
@@ -286,7 +286,7 @@ function Test-TaskbarPinned {
         }
         $nameProperty = $verb.PSObject.Properties['Name']
         $verbName = if ($nameProperty) { $nameProperty.Value } else { '' }
-        $normalized = Normalize-LabContextMenuLabel -Label $verbName
+        $normalized = Convert-LabContextMenuLabel -Label $verbName
         if ([string]::IsNullOrWhiteSpace($normalized)) {
             continue
         }
@@ -363,3 +363,4 @@ function Test-LabTaskbarPinnedState {
 
     return $false
 }
+
