@@ -180,6 +180,10 @@
             "taskbarShortcutName": "CST Studio Suite",
             "taskbarPinMode": "layout",
             "taskbarTargets": [
+                "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\AMD64\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT_AMD64.exe",
                 "%ProgramFiles%\\CST*Studio*Suite*\\CST DESIGN ENVIRONMENT.exe",
                 "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT.exe",
                 "%ProgramFiles%\\3DS*CST*Suite*\\CST DESIGN ENVIRONMENT.exe",
