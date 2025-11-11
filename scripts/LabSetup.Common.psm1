@@ -76,7 +76,7 @@ $LabSetupExportedFunctions = @(
     'Reset-LabTaskbarLayoutState',
     'Resolve-LabPathCandidates',
     'Get-LabPublicDesktopPath',
-    'Ensure-LabDesktopShortcuts',
+    'Set-LabDesktopShortcuts',
     'Set-LabExtraTaskbarPins',
     'Get-VoltaNodeInstallArguments',
     'Initialize-VoltaDirectoryLayout',

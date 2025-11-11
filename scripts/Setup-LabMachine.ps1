@@ -78,7 +78,7 @@ try {
     }
 
     Install-LabPackages -Config $config -LogWriter $logWriter
-    Ensure-LabDesktopShortcuts -Config $config -LogWriter $logWriter
+    Set-LabDesktopShortcuts -Config $config -LogWriter $logWriter
 
     if (-not $SkipVolta) {
         Set-VoltaToolchain -Config $config -LogWriter $logWriter

@@ -82,7 +82,7 @@ function Get-LabPublicDesktopPath {
     return 'C:\Users\Public\Desktop'
 }
 
-function Ensure-LabDesktopShortcuts {
+function Set-LabDesktopShortcuts {
     param(
         [Parameter(Mandatory)]
         [hashtable]$Config,
