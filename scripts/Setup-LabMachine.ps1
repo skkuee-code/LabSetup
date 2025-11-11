@@ -78,6 +78,7 @@ try {
     }
 
     Install-LabPackages -Config $config -LogWriter $logWriter
+    Ensure-LabDesktopShortcuts -Config $config -LogWriter $logWriter
 
     if (-not $SkipVolta) {
         Set-VoltaToolchain -Config $config -LogWriter $logWriter
@@ -105,6 +106,7 @@ try {
 
     if (-not $SkipTaskbarPins) {
         Set-LabTaskbarPins -Config $config -LogWriter $logWriter -PreservedPins $preservedTaskbarPins
+        Set-LabExtraTaskbarPins -Config $config -LogWriter $logWriter
     } else {
         Write-LabLog -Message 'Skipping taskbar pinning (requested).' -LogWriter $logWriter
     }

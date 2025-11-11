@@ -16,6 +16,19 @@
             ]
         },
         {
+            "id": "GitHub.GitHubDesktop",
+            "displayName": "GitHub Desktop",
+            "silent": true,
+            "pinToTaskbar": true,
+            "scope": "machine",
+            "appUserModelId": "com.squirrel.GitHubDesktop.GitHubDesktop",
+            "taskbarTargets": [
+                "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%ProgramFiles(x86)%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%LOCALAPPDATA%\\GitHubDesktop\\GitHubDesktop.exe"
+            ]
+        },
+        {
             "id": "Microsoft.VisualStudioCode",
             "displayName": "Visual Studio Code",
             "silent": true,
@@ -143,6 +156,37 @@
             ]
         }
     },
+    "publicDesktopShortcuts": [
+        {
+            "name": "GitHub Desktop.lnk",
+            "displayName": "GitHub Desktop",
+            "targetCandidates": [
+                "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%ProgramFiles(x86)%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%LOCALAPPDATA%\\GitHubDesktop\\GitHubDesktop.exe"
+            ],
+            "iconCandidates": [
+                "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%ProgramFiles(x86)%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%LOCALAPPDATA%\\GitHubDesktop\\GitHubDesktop.exe"
+            ],
+            "arguments": "",
+            "description": "Launch GitHub Desktop."
+        }
+    ],
+    "taskbarExtraPins": [
+        {
+            "displayName": "CST Studio Suite",
+            "taskbarShortcutName": "CST Studio Suite",
+            "taskbarTargets": [
+                "%ProgramFiles%\\CST*Studio*Suite*\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles%\\3DS*CST*Suite*\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT.exe"
+            ]
+        }
+    ],
     "taskbar": {
         "retryCount": 3,
         "retryDelaySeconds": 10
