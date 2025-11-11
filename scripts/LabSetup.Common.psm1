@@ -106,9 +106,9 @@ $LabSetupExportedFunctions = @(
     'Test-MiKTeXPresence',
     'Remove-MiKTeXResidualPaths',
     'Uninstall-MiKTeXInstallation',
-    'Configure-TeXLiveRepository',
-    'Configure-TeXLivePath',
-    'Refresh-TeXLiveFileDatabase',
+    'Set-TeXLiveRepository',
+    'Set-TeXLivePath',
+    'Update-TeXLiveFileDatabase',
     'Set-TeXLiveConfiguration',
     'Set-WindowsTerminalDefaultProfile'
 )

@@ -418,7 +418,7 @@ function Uninstall-MiKTeXInstallation {
     }
 }
 
-function Configure-TeXLiveRepository {
+function Set-TeXLiveRepository {
     param(
         [Parameter(Mandatory)]
         [string]$TlmgrPath,
@@ -440,7 +440,7 @@ function Configure-TeXLiveRepository {
     Write-LabLog -Message "Configured TeX Live repository: $repository" -LogWriter $LogWriter
 }
 
-function Configure-TeXLivePath {
+function Set-TeXLivePath {
     param(
         [Parameter(Mandatory)]
         [string]$TlmgrPath,
@@ -463,7 +463,7 @@ function Configure-TeXLivePath {
     Write-LabLog -Message 'TeX Live PATH entries registered.' -LogWriter $LogWriter
 }
 
-function Refresh-TeXLiveFileDatabase {
+function Update-TeXLiveFileDatabase {
     param(
         [hashtable]$TexConfig,
         [System.IO.StreamWriter]$LogWriter
@@ -511,7 +511,7 @@ function Set-TeXLiveConfiguration {
         throw 'TeX Live tlmgr utility not found after installation.'
     }
 
-    Configure-TeXLiveRepository -TlmgrPath $tlmgrPath -TexConfig $Config.tex -LogWriter $LogWriter
-    Configure-TeXLivePath -TlmgrPath $tlmgrPath -TexConfig $Config.tex -LogWriter $LogWriter
-    Refresh-TeXLiveFileDatabase -TexConfig $Config.tex -LogWriter $LogWriter
+    Set-TeXLiveRepository -TlmgrPath $tlmgrPath -TexConfig $Config.tex -LogWriter $LogWriter
+    Set-TeXLivePath -TlmgrPath $tlmgrPath -TexConfig $Config.tex -LogWriter $LogWriter
+    Update-TeXLiveFileDatabase -TexConfig $Config.tex -LogWriter $LogWriter
 }
