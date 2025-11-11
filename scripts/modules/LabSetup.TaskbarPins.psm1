@@ -662,6 +662,15 @@ function Get-LabTaskbarPinRequest {
     if (-not $forceShortcut -and $candidatePaths.Count -gt 0) {
         foreach ($candidate in $candidatePaths) {
             if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+
+            if ($candidate -match '^(?i)shell:appsfolder\\') {
+                if ([string]::IsNullOrWhiteSpace($appId)) {
+                    $forceShortcut = $true
+                    break
+                }
+                continue
+            }
+
             $extension = $null
             try {
                 $extension = [System.IO.Path]::GetExtension($candidate)
