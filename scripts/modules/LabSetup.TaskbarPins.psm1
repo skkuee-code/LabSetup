@@ -273,20 +273,18 @@ function Resolve-LabShortcutPath {
         [string]$AppId
     )
 
-    if ($CreationPolicy -ne 'Always') {
-        $names = New-Object System.Collections.Generic.List[string]
-        if (-not [string]::IsNullOrWhiteSpace($PreferredName)) {
-            [void]$names.Add($PreferredName)
-        }
-        if (-not [string]::IsNullOrWhiteSpace($DisplayName) -and -not $names.Contains($DisplayName)) {
-            [void]$names.Add($DisplayName)
-        }
+    $names = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($PreferredName)) {
+        [void]$names.Add($PreferredName)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($DisplayName) -and -not $names.Contains($DisplayName)) {
+        [void]$names.Add($DisplayName)
+    }
 
-        foreach ($name in $names) {
-            $existing = Get-StartMenuShortcutPath -ShortcutName $name
-            if ($existing) {
-                return $existing
-            }
+    foreach ($name in $names) {
+        $existing = Get-StartMenuShortcutPath -ShortcutName $name
+        if ($existing) {
+            return $existing
         }
     }
 
@@ -360,7 +358,15 @@ function Resolve-LabShortcutPath {
         }
 
         $shellArgument = "shell:AppsFolder\{0}" -f $shellAppId
-        return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $explorerPath -Arguments $shellArgument -AppId $effectiveAppId -IconPath $iconPath -Config $Config
+        try {
+            return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $explorerPath -Arguments $shellArgument -AppId $effectiveAppId -IconPath $iconPath -Config $Config
+        }
+        catch {
+            if ($LogWriter) {
+                Write-LabLog -Message ("Unable to create shell shortcut for {0}: {1}" -f $DisplayName, $_.Exception.Message) -LogWriter $LogWriter
+            }
+            return $null
+        }
     }
 
     $target = Resolve-ExecutableFromCandidates -Candidates $normalizedCandidates
@@ -371,7 +377,15 @@ function Resolve-LabShortcutPath {
         return $null
     }
 
-    return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $target -AppId $effectiveAppId -Config $Config
+    try {
+        return New-LabTaskbarShortcut -DisplayName $shortcutLabel -ExecutablePath $target -AppId $effectiveAppId -Config $Config
+    }
+    catch {
+        if ($LogWriter) {
+            Write-LabLog -Message ("Unable to create shortcut for {0}: {1}" -f $DisplayName, $_.Exception.Message) -LogWriter $LogWriter
+        }
+        return $null
+    }
 }
 
 function Get-LabAppUserModelIdFromText {
