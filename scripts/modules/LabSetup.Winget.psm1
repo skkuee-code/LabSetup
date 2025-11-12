@@ -6,6 +6,7 @@ $script:WingetExitCodes = @{
     NoInstalledPackage     = -1978335212
     InstallAlreadyInstalled = -1978334963
     InstallDowngrade       = -1978334962
+    InvalidCommandLine     = -1978335230
 }
 
 $script:WingetDefaultAcceptableExitCodes = @(
@@ -338,7 +339,8 @@ function Install-WingetPackage {
         $script:WingetExitCodes.PackageAlreadyInstalled,
         $script:WingetExitCodes.NoApplicableInstaller,
         $script:WingetExitCodes.InstallAlreadyInstalled,
-        $script:WingetExitCodes.InstallDowngrade
+        $script:WingetExitCodes.InstallDowngrade,
+        $script:WingetExitCodes.InvalidCommandLine
     )
 
     $silentFlag = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'silent')
@@ -404,6 +406,16 @@ function Install-WingetPackage {
                 $script:WingetExitCodes.InstallDowngrade {
                     Write-LabLog -Message "$displayName install would downgrade the currently-installed version; leaving existing install in place." -LogWriter $LogWriter
                     return
+                }
+                $script:WingetExitCodes.InvalidCommandLine {
+                    if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
+                        Write-LabLog -Message "$displayName silent install arguments rejected by winget; retrying without --silent." -LogWriter $LogWriter
+                        continue InstallAttempt
+                    }
+
+                    $message = "$displayName install arguments were rejected by winget (invalid command line)."
+                    Write-LabLog -Message $message -LogWriter $LogWriter
+                    throw $message
                 }
             }
 
