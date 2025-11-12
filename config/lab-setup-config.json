@@ -1,0 +1,239 @@
+{
+    "programDataPath": "C:\\ProgramData\\LabSetup",
+    "publicDesktopShortcutName": "Lab Setup.lnk",
+    "setupScriptPath": "scripts\\Setup-LabMachine.ps1",
+    "wingetPackages": [
+        {
+            "id": "SlackTechnologies.Slack",
+            "displayName": "Slack",
+            "silent": true,
+            "pinToTaskbar": true,
+            "appUserModelId": "com.squirrel.slack.slack",
+            "taskbarTargets": [
+                "C:\\Program Files\\Slack\\slack.exe",
+                "C:\\Program Files (x86)\\Slack\\slack.exe",
+                "%LOCALAPPDATA%\\slack\\slack.exe"
+            ]
+        },
+        {
+            "id": "GitHub.GitHubDesktop",
+            "displayName": "GitHub Desktop",
+            "silent": true,
+            "pinToTaskbar": true,
+            "scope": "user",
+            "architecture": "x64",
+            "installerType": "exe",
+            "appUserModelId": "com.squirrel.GitHubDesktop.GitHubDesktop",
+            "taskbarTargets": [
+                "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%ProgramFiles(x86)%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%LOCALAPPDATA%\\GitHubDesktop\\GitHubDesktop.exe"
+            ]
+        },
+        {
+            "id": "Microsoft.VisualStudioCode",
+            "displayName": "Visual Studio Code",
+            "silent": true,
+            "pinToTaskbar": true,
+            "appUserModelId": "Microsoft.VisualStudioCode",
+            "taskbarTargets": [
+                "C:\\Program Files\\Microsoft VS Code\\Code.exe",
+                "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"
+            ]
+        },
+        {
+            "id": "Google.Chrome",
+            "displayName": "Google Chrome",
+            "silent": true,
+            "pinToTaskbar": true,
+            "appUserModelId": "Chrome",
+            "taskbarTargets": [
+                "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+            ]
+        },
+        {
+            "id": "Microsoft.WindowsTerminal",
+            "displayName": "Windows Terminal",
+            "silent": true,
+            "pinToTaskbar": true,
+            "appUserModelId": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App",
+            "taskbarTargets": [
+                "%SystemRoot%\\System32\\wt.exe",
+                "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe",
+                "shell:AppsFolder\\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
+            ]
+        },
+        {
+            "id": "AnalogDevices.LTspice",
+            "displayName": "LTspice",
+            "scope": "user",
+            "silent": true,
+            "pinToTaskbar": true,
+            "appUserModelId": "{6D809377-6AF0-444B-8957-A3773F02200E}\\ADI\\LTspice\\LTspice.exe",
+            "taskbarTargets": [
+                "%LOCALAPPDATA%\\Programs\\ADI\\LTspice\\LTspice.exe",
+                "%ProgramFiles%\\ADI\\LTspice\\LTspice.exe",
+                "%ProgramFiles%\\LTC\\LTspiceXVII\\XVIIx64.exe"
+            ]
+        },
+        {
+            "id": "LayoutEditor",
+            "displayName": "LayoutEditor",
+            "silent": false,
+            "pinToTaskbar": true,
+            "taskbarPinMode": "layout",
+            "taskbarShortcutName": "LayoutEditor",
+            "taskbarForceShortcut": true,
+            "appUserModelId": "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\LayoutEditor\\layout.bat",
+            "taskbarTargets": [
+                "%ProgramFiles%\\LayoutEditor\\layout.bat",
+                "%ProgramFiles%\\LayoutEditor\\bin\\layout.exe",
+                "%ProgramFiles(x86)%\\LayoutEditor\\layout.bat",
+                "%ProgramFiles(x86)%\\LayoutEditor\\bin\\layout.exe"
+            ],
+            "installer": {
+                "type": "msi",
+                "downloadUrl": "https://www.layouteditor.net/releases/20250528/layout-20250528-win-64bit-installer.msi",
+                "expectedFileName": "layout-20250528-win-64bit-installer.msi",
+                "productCode": "{AF905B29-C486-46A5-A245-A4E78E83E0EF}",
+                "minimumVersion": "20.2.2"
+            }
+        },
+        {
+            "id": "astral-sh.uv",
+            "displayName": "uv",
+            "silent": true
+        },
+        {
+            "id": "Volta.Volta",
+            "displayName": "Volta",
+            "silent": true
+        },
+        {
+            "id": "Git.Git",
+            "displayName": "Git",
+            "silent": true
+        },
+        {
+            "id": "GitHub.GitLFS",
+            "displayName": "Git LFS",
+            "silent": true
+        },
+        {
+            "id": "GitHub.cli",
+            "displayName": "GitHub CLI",
+            "silent": true,
+            "scope": "machine"
+        },
+        {
+            "id": "Posit.Quarto",
+            "displayName": "Quarto",
+            "silent": true
+        }
+    ],
+    "volta": {
+        "nodeVersion": "lts",
+        "homePath": "%LOCALAPPDATA%\\Volta",
+        "globalPackages": [
+            "typescript"
+        ]
+    },
+    "uv": {
+        "pythonVersions": [
+            "3.12"
+        ]
+    },
+    "git": {
+        "configureLfs": true
+    },
+    "tex": {
+        "distribution": "texlive",
+        "installDir": "C:\\\\texlive\\\\2025",
+        "binRelativePath": "bin\\\\windows",
+        "profile": {
+            "lines": [
+                "# TeX Live profile generated for LabSetup",
+                "selected_scheme scheme-full",
+                "TEXDIR C:/texlive/2025",
+                "TEXMFCONFIG C:/texlive/texmf-config",
+                "TEXMFLOCAL C:/texlive/texmf-local",
+                "TEXMFSYSCONFIG C:/texlive/2025/texmf-config",
+                "TEXMFSYSVAR C:/texlive/2025/texmf-var",
+                "TEXMFVAR C:/texlive/texmf-var",
+                "binary_win32 1",
+                "instopt_adjustpath 0",
+                "instopt_letter 0",
+                "instopt_portable 0",
+                "tlpdbopt_autobackup 0",
+                "tlpdbopt_install_docfiles 1",
+                "tlpdbopt_install_srcfiles 1"
+            ]
+        },
+        "installer": {
+            "downloadUrl": "https://mirror.ctan.org/systems/texlive/tlnet/install-tl-windows.exe",
+            "expectedFileName": "install-tl-windows.exe",
+            "arguments": [
+                "--no-gui"
+            ]
+        },
+        "tlmgr": {
+            "repository": "https://mirror.ctan.org/systems/texlive/tlnet",
+            "pathWindowsMode": "admin"
+        },
+        "postInstall": {
+            "refreshFileDatabase": true
+        }
+    },
+    "publicDesktopShortcuts": [
+        {
+            "name": "GitHub Desktop.lnk",
+            "displayName": "GitHub Desktop",
+            "targetCandidates": [
+                "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%ProgramFiles(x86)%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%LOCALAPPDATA%\\GitHubDesktop\\GitHubDesktop.exe"
+            ],
+            "iconCandidates": [
+                "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%ProgramFiles(x86)%\\GitHub Desktop\\GitHubDesktop.exe",
+                "%LOCALAPPDATA%\\GitHubDesktop\\GitHubDesktop.exe"
+            ],
+            "arguments": "",
+            "description": "Launch GitHub Desktop."
+        }
+    ],
+    "taskbarExtraPins": [
+        {
+            "displayName": "CST Studio Suite",
+            "taskbarShortcutName": "CST Studio Suite",
+            "taskbarPinMode": "layout",
+            "taskbarTargets": [
+                "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\CST*Studio*Suite*\\CST*Studio*Suite*.lnk",
+                "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\AMD64\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT_AMD64.exe",
+                "%ProgramFiles%\\CST*Studio*Suite*\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles%\\3DS*CST*Suite*\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\CST DESIGN ENVIRONMENT.exe",
+                "%ProgramFiles(x86)%\\CST*Studio*Suite*\\AMD64\\bin\\CST DESIGN ENVIRONMENT.exe"
+            ]
+        }
+    ],
+    "taskbar": {
+        "retryCount": 3,
+        "retryDelaySeconds": 10
+    },
+    "windowsTerminal": {
+        "configureDefaultProfile": true,
+        "defaultProfileSource": "Windows.Terminal.PowershellCore",
+        "defaultProfileName": "PowerShell 7",
+        "defaultProfileCommand": "%ProgramFiles%\\PowerShell\\7\\pwsh.exe",
+        "settingsPaths": [
+            "%LOCALAPPDATA%\\Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\LocalState\\settings.json",
+            "%LOCALAPPDATA%\\Packages\\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\\LocalState\\settings.json",
+            "%LOCALAPPDATA%\\Microsoft\\Windows Terminal\\settings.json"
+        ]
+    }
+}
