@@ -23,15 +23,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         # languages を明示しないと自動検出。
         # 複数コンパイル言語を確実に解析したい場合は matrix 設定を導入。
         # 参考: ドキュメントを確認して必要に応じて matrix を追加してください。
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: '/language:default'
