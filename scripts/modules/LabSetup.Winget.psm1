@@ -369,7 +369,8 @@ function Install-WingetPackage {
             }
         }
 
-        :InstallAttempt foreach ($attempt in $installAttempts) {
+        :InstallAttempt for ($attemptIndex = 0; $attemptIndex -lt $installAttempts.Count; $attemptIndex++) {
+            $attempt = $installAttempts[$attemptIndex]
             $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
             $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
             $arguments = @($baseArgs + $scopeArgs + $attempt.ExtraArgs)
@@ -423,6 +424,7 @@ function Install-WingetPackage {
                         $installerFiltersRemoved = $true
                         $baseArgs = @($baseArgsCore)
                         Write-LabLog -Message "$displayName installer selection arguments rejected; retrying without architecture/installer filters." -LogWriter $LogWriter
+                        $attemptIndex--
                         continue InstallAttempt
                     }
 
