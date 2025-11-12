@@ -26,10 +26,10 @@ function Resolve-LabPathCandidates {
 
         if ($hasWildcard) {
             try {
-                $matches = Get-ChildItem -Path $expanded -File -ErrorAction SilentlyContinue
-                foreach ($match in $matches) {
-                    if ($match -and $seen.Add($match.FullName)) {
-                        [void]$results.Add($match.FullName)
+                $pathMatches = Get-ChildItem -Path $expanded -File -ErrorAction SilentlyContinue
+                foreach ($pathMatch in $pathMatches) {
+                    if ($pathMatch -and $seen.Add($pathMatch.FullName)) {
+                        [void]$results.Add($pathMatch.FullName)
                     }
                 }
             }
@@ -136,7 +136,7 @@ function Set-LabDesktopShortcuts {
 
         $target = $resolvedTargets[0]
         $arguments = ''
-        if ($entry.ContainsKey('arguments') -and $entry['arguments'] -ne $null) {
+        if ($entry.ContainsKey('arguments') -and $null -ne $entry['arguments']) {
             $arguments = $entry['arguments']
         }
 
