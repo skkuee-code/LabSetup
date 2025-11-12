@@ -21,7 +21,6 @@
             "silent": true,
             "pinToTaskbar": true,
             "scope": "machine",
-            "alwaysInstall": true,
             "architecture": "x64",
             "installerType": "wix",
             "appUserModelId": "com.squirrel.GitHubDesktop.GitHubDesktop",

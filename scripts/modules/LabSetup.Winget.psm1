@@ -355,25 +355,9 @@ function Install-WingetPackage {
 
         if (-not $alwaysInstall -and -not $skipUpgradePrecheck) {
             $scopePrecheck = Get-WingetInstallPrecheckResult -Package $Package -LogRoot $wingetLogRoot -LogWriter $LogWriter -Scope $currentScope
-            switch ($scopePrecheck) {
-                'UpToDate' {
-                    Write-LabLog -Message "$displayName is already at the latest version for scope '$currentScope'; skipping winget install." -LogWriter $LogWriter
-                    return
-                }
-                'AlreadyInstalled' {
-                    Write-LabLog -Message "$displayName is already installed for scope '$currentScope'; skipping winget install." -LogWriter $LogWriter
-                    return
-                }
-                'ScopeMismatch' {
-                    if ($scopeIndex -lt ($scopeCandidates.Count - 1)) {
-                        Write-LabLog -Message "$displayName does not provide an installer for scope '$currentScope'; trying next scope." -LogWriter $LogWriter
-                        continue ScopeAttempt
-                    }
-
-                    $message = "$displayName does not provide an installer for scope '$currentScope' via winget."
-                    Write-LabLog -Message $message -LogWriter $LogWriter
-                    throw $message
-                }
+            if ($scopePrecheck -in @('UpToDate', 'AlreadyInstalled')) {
+                Write-LabLog -Message "$displayName is already installed for scope '$currentScope'; skipping winget install." -LogWriter $LogWriter
+                return
             }
         }
 
