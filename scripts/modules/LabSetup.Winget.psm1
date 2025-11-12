@@ -367,6 +367,17 @@ function Install-WingetPackage {
                 Write-LabLog -Message "$displayName is already installed for scope '$currentScope'; skipping winget install." -LogWriter $LogWriter
                 return
             }
+
+            if ($scopePrecheck -eq 'ScopeMismatch') {
+                if ($scopeIndex -lt ($scopeCandidates.Count - 1)) {
+                    $nextScope = $scopeCandidates[$scopeIndex + 1]
+                    Write-LabLog -Message "$displayName does not provide an installer for scope '$currentScope'; retrying with scope '$nextScope'." -LogWriter $LogWriter
+                    continue ScopeAttempt
+                }
+
+                Write-LabLog -Message "$displayName does not provide an installer for scope '$currentScope'; no alternate scopes available." -LogWriter $LogWriter
+                continue ScopeAttempt
+            }
         }
 
         :InstallAttempt for ($attemptIndex = 0; $attemptIndex -lt $installAttempts.Count; $attemptIndex++) {
@@ -426,6 +437,12 @@ function Install-WingetPackage {
                         Write-LabLog -Message "$displayName installer selection arguments rejected; retrying without architecture/installer filters." -LogWriter $LogWriter
                         $attemptIndex--
                         continue InstallAttempt
+                    }
+
+                    if ($scopeIndex -lt ($scopeCandidates.Count - 1)) {
+                        $nextScope = $scopeCandidates[$scopeIndex + 1]
+                        Write-LabLog -Message "$displayName install arguments rejected while targeting scope '$currentScope'; retrying with scope '$nextScope'." -LogWriter $LogWriter
+                        continue ScopeAttempt
                     }
 
                     $message = "$displayName install arguments were rejected by winget (invalid command line)."

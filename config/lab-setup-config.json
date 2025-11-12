@@ -20,9 +20,9 @@
             "displayName": "GitHub Desktop",
             "silent": true,
             "pinToTaskbar": true,
-            "scope": "machine",
+            "scope": "user",
             "architecture": "x64",
-            "installerType": "wix",
+            "installerType": "exe",
             "appUserModelId": "com.squirrel.GitHubDesktop.GitHubDesktop",
             "taskbarTargets": [
                 "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",
