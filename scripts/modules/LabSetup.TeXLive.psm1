@@ -388,8 +388,8 @@ function Uninstall-MiKTeXInstallation {
     if (-not $removed) {
         $miktexSetup = Resolve-MiKTeXUtility -Name 'miktexsetup'
         if ($miktexSetup) {
-            Write-LabLog -Message 'Falling back to miktexsetup --uninstall --shared ...' -LogWriter $LogWriter
-            $arguments = @('--uninstall', '--shared')
+            Write-LabLog -Message 'Falling back to miktexsetup uninstall with --shared=yes ...' -LogWriter $LogWriter
+            $arguments = @('--verbose', '--shared=yes', 'uninstall')
             $process = Invoke-ProcessWithSpinner -FilePath $miktexSetup -ArgumentList $arguments -Activity 'Uninstalling MiKTeX (miktexsetup)...'
             $exitCode = Get-LabProcessExitCode -Process $process
             if ($exitCode -eq 0) {

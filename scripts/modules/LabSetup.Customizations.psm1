@@ -52,7 +52,9 @@ function Resolve-LabPathCandidates {
         }
     }
 
-    return $results.ToArray()
+    $resolved = $results.ToArray()
+    # Force array semantics so single results aren't unwrapped into char arrays later.
+    return ,$resolved
 }
 
 function Get-LabPublicDesktopPath {
