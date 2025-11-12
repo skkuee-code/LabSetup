@@ -356,7 +356,12 @@ function Install-WingetPackage {
 
     :ScopeAttempt for ($scopeIndex = 0; $scopeIndex -lt $scopeCandidates.Count; $scopeIndex++) {
         $currentScope = $scopeCandidates[$scopeIndex]
-        $scopeArgs = @('--scope', $currentScope)
+        $scopeArgs = @()
+        if (-not [string]::IsNullOrWhiteSpace($currentScope)) {
+            $scopeArgs = @('--scope', $currentScope)
+        }
+        $scopeArgumentRemoved = $false
+        $useScopeArgument = ($scopeArgs.Count -gt 0)
         if ($scopeCandidates.Count -gt 1) {
             Write-LabLog -Message "Attempting $displayName install with scope '$currentScope'." -LogWriter $LogWriter
         }
@@ -384,7 +389,11 @@ function Install-WingetPackage {
             $attempt = $installAttempts[$attemptIndex]
             $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
             $logPath = Join-Path -Path $wingetLogRoot -ChildPath ("{0}_{1}_{2}.log" -f $sanitizedId, $attempt.Name, $timestamp)
-            $arguments = @($baseArgs + $scopeArgs + $attempt.ExtraArgs)
+            $arguments = @($baseArgs)
+            if ($useScopeArgument -and $scopeArgs.Count -gt 0) {
+                $arguments += $scopeArgs
+            }
+            $arguments += $attempt.ExtraArgs
             $activity = "Installing $displayName"
             $result = Invoke-Winget -Arguments $arguments -AcceptableExitCodes $expectedExitCodes -LogWriter $LogWriter -LogFilePath $logPath -ActivityMessage $activity -ShowSpinner
 
@@ -435,6 +444,15 @@ function Install-WingetPackage {
                         $installerFiltersRemoved = $true
                         $baseArgs = @($baseArgsCore)
                         Write-LabLog -Message "$displayName installer selection arguments rejected; retrying without architecture/installer filters." -LogWriter $LogWriter
+                        $attemptIndex--
+                        continue InstallAttempt
+                    }
+
+                    if ($useScopeArgument -and -not $scopeArgumentRemoved) {
+                        $scopeArgumentRemoved = $true
+                        $useScopeArgument = $false
+                        $scopeLabel = if ([string]::IsNullOrWhiteSpace($currentScope)) { 'default' } else { $currentScope }
+                        Write-LabLog -Message "$displayName install arguments rejected while specifying scope '$scopeLabel'; retrying without an explicit scope parameter." -LogWriter $LogWriter
                         $attemptIndex--
                         continue InstallAttempt
                     }
