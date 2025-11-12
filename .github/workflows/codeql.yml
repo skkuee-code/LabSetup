@@ -1,0 +1,37 @@
+# .github/workflows/codeql.yml
+name: CodeQL
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 3 * * 1' # 毎週月曜 03:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    permissions:
+      contents: read
+      security-events: write  # SARIF のアップロードに必要
+      actions: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        # languages を明示しないと自動検出。
+        # 複数コンパイル言語を確実に解析したい場合は matrix 設定を導入。
+        # 参考: ドキュメントを確認して必要に応じて matrix を追加してください。
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:default'

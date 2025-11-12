@@ -1,0 +1,19 @@
+# .github/workflows/dependency-review.yml
+name: Dependency Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # ライセンス/スコープ判定などの高度な設定は必要に応じて追加
