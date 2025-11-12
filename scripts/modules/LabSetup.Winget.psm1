@@ -221,13 +221,22 @@ function Get-WingetInstallPrecheckResult {
         [hashtable]$Package,
         [Parameter(Mandatory)]
         [string]$LogRoot,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [string]$Scope
     )
 
     $id = $Package.id
     $sanitizedId = ($id -replace '[^A-Za-z0-9_.-]', '_')
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmssfff'
-    $logPath = Join-Path -Path $LogRoot -ChildPath ("{0}_precheck_{1}.log" -f $sanitizedId, $timestamp)
+    $scopeSuffix = ''
+    if (-not [string]::IsNullOrWhiteSpace($Scope)) {
+        $normalizedScope = $Scope.Trim().ToLowerInvariant()
+        $sanitizedScope = ($normalizedScope -replace '[^a-z0-9_-]', '')
+        if (-not [string]::IsNullOrWhiteSpace($sanitizedScope)) {
+            $scopeSuffix = "_{0}" -f $sanitizedScope
+        }
+    }
+    $logPath = Join-Path -Path $LogRoot -ChildPath ("{0}_precheck{1}_{2}.log" -f $sanitizedId, $scopeSuffix, $timestamp)
 
     $arguments = @(
         'upgrade',
@@ -236,6 +245,9 @@ function Get-WingetInstallPrecheckResult {
         '--accept-package-agreements',
         '--accept-source-agreements'
     )
+    if (-not [string]::IsNullOrWhiteSpace($Scope)) {
+        $arguments += @('--scope', $Scope)
+    }
 
     $precheckExitCodes = @(
         $script:WingetExitCodes.UpdateNotApplicable,
@@ -274,14 +286,6 @@ function Install-WingetPackage {
 
     $alwaysInstall = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'alwaysInstall')
     $skipUpgradePrecheck = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'skipUpgradePrecheck')
-    $precheckStatus = 'Unknown'
-    if (-not $alwaysInstall -and -not $skipUpgradePrecheck) {
-        $precheckStatus = Get-WingetInstallPrecheckResult -Package $Package -LogRoot $wingetLogRoot -LogWriter $LogWriter
-        if ($precheckStatus -in @('UpToDate', 'AlreadyInstalled')) {
-            Write-LabLog -Message "$displayName is already at the latest version; skipping winget install." -LogWriter $LogWriter
-            return
-        }
-    }
 
     $baseArgs = @(
         'install',
@@ -323,6 +327,14 @@ function Install-WingetPackage {
         $scopeArgs = @('--scope', $currentScope)
         if ($scopeCandidates.Count -gt 1) {
             Write-LabLog -Message "Attempting $displayName install with scope '$currentScope'." -LogWriter $LogWriter
+        }
+
+        if (-not $alwaysInstall -and -not $skipUpgradePrecheck) {
+            $scopePrecheck = Get-WingetInstallPrecheckResult -Package $Package -LogRoot $wingetLogRoot -LogWriter $LogWriter -Scope $currentScope
+            if ($scopePrecheck -in @('UpToDate', 'AlreadyInstalled')) {
+                Write-LabLog -Message "$displayName is already installed for scope '$currentScope'; skipping winget install." -LogWriter $LogWriter
+                return
+            }
         }
 
         :InstallAttempt foreach ($attempt in $installAttempts) {
