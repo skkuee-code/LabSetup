@@ -120,6 +120,12 @@
             "silent": true
         },
         {
+            "id": "GitHub.cli",
+            "displayName": "GitHub CLI",
+            "silent": true,
+            "scope": "machine"
+        },
+        {
             "id": "Posit.Quarto",
             "displayName": "Quarto",
             "silent": true

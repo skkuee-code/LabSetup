@@ -54,7 +54,7 @@ LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリ�
     ```powershell
     C:\ProgramData\LabSetup\scripts\Setup-LabMachine.ps1
     ```
-    -   Slack、Visual Studio Code、Google Chrome、LTspice、Git、Git LFS、Quartoを `winget install --scope machine` でインストールし、パッケージがProgram Files以下に配置されるようにします。
+    -   Slack、Visual Studio Code、Google Chrome、LTspice、Git、Git LFS、GitHub CLI、Quartoを `winget install --scope machine` でインストールし、パッケージがProgram Files以下に配置されるようにします。
     -   コミュニティのwingetフィードで公開されていないため、ベンダーのMSIからLayoutEditorをダウンロードしてインストールします。
     -   uvで管理されるPython（`uv python install 3.12`）を設定し、共有インタープリターのために `UV_PYTHON_INSTALL_DIR` をProgramData以下に設定します。
     -   Voltaのツールチェーンの場所をProgramData内に設定し、Node LTSをインストールし、`volta install` を介してグローバルにTypeScriptを追加します。
@@ -99,6 +99,7 @@ LabSetupは、教室や研究室のPC向けに、マシン単位でのアプリ�
     ```powershell
     winget list --scope machine --id SlackTechnologies.Slack
     winget list --scope machine --id Microsoft.VisualStudioCode
+    winget list --scope machine --id GitHub.cli
     ```
 2.  **Volta/TypeScript**
     ```powershell
