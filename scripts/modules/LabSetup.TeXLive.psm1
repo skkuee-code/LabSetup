@@ -365,38 +365,48 @@ function Uninstall-MiKTeXInstallation {
     }
 
     $removed = $false
-    $wingetArgs = @(
+    $wingetBaseArgs = @(
         'uninstall',
         '--id', 'MiKTeX.MiKTeX',
-        '--scope', 'machine',
         '--silent',
         '--accept-source-agreements',
         '--accept-package-agreements'
     )
 
-    try {
-        Write-LabLog -Message 'Attempting MiKTeX uninstall via winget...' -LogWriter $LogWriter
-        $wingetResult = Invoke-Winget -Arguments $wingetArgs -LogWriter $LogWriter -ActivityMessage 'Uninstalling MiKTeX via winget...' -ShowSpinner
-        if ($wingetResult.ExitCode -eq 0 -or -not (Test-MiKTeXPresence)) {
-            $removed = $true
+    $wingetScopes = @('machine', 'user')
+    foreach ($scope in $wingetScopes) {
+        if ($removed) { break }
+
+        $scopeArgs = @($wingetBaseArgs + @('--scope', $scope))
+        try {
+            Write-LabLog -Message ("Attempting MiKTeX uninstall via winget (--scope {0})..." -f $scope) -LogWriter $LogWriter
+            $wingetResult = Invoke-Winget -Arguments $scopeArgs -LogWriter $LogWriter -ActivityMessage ("Uninstalling MiKTeX via winget (--scope {0})..." -f $scope) -ShowSpinner
+            if ($wingetResult.ExitCode -eq 0 -or -not (Test-MiKTeXPresence)) {
+                $removed = $true
+                break
+            }
         }
-    }
-    catch {
-        Write-LabLog -Message ("winget uninstall attempt for MiKTeX failed: {0}" -f $_.Exception.Message) -LogWriter $LogWriter
+        catch {
+            Write-LabLog -Message ("winget uninstall attempt for MiKTeX (--scope {0}) failed: {1}" -f $scope, $_.Exception.Message) -LogWriter $LogWriter
+        }
     }
 
     if (-not $removed) {
         $miktexSetup = Resolve-MiKTeXUtility -Name 'miktexsetup'
         if ($miktexSetup) {
-            Write-LabLog -Message 'Falling back to miktexsetup uninstall with --shared=yes ...' -LogWriter $LogWriter
-            $arguments = @('--verbose', '--shared=yes', 'uninstall')
-            $process = Invoke-ProcessWithSpinner -FilePath $miktexSetup -ArgumentList $arguments -Activity 'Uninstalling MiKTeX (miktexsetup)...'
-            $exitCode = Get-LabProcessExitCode -Process $process
-            if ($exitCode -eq 0) {
-                $removed = $true
-            }
-            else {
-                Write-LabLog -Message ("miktexsetup uninstall exited with code {0}." -f $exitCode) -LogWriter $LogWriter
+            foreach ($sharedValue in @('yes', 'no')) {
+                if ($removed) { break }
+
+                Write-LabLog -Message ("Falling back to miktexsetup uninstall with --shared={0} ..." -f $sharedValue) -LogWriter $LogWriter
+                $arguments = @('--verbose', ("--shared={0}" -f $sharedValue), 'uninstall')
+                $process = Invoke-ProcessWithSpinner -FilePath $miktexSetup -ArgumentList $arguments -Activity ("Uninstalling MiKTeX (miktexsetup --shared={0})..." -f $sharedValue)
+                $exitCode = Get-LabProcessExitCode -Process $process
+                if ($exitCode -eq 0 -or -not (Test-MiKTeXPresence)) {
+                    $removed = $true
+                    break
+                }
+
+                Write-LabLog -Message ("miktexsetup uninstall with --shared={0} exited with code {1}." -f $sharedValue, $exitCode) -LogWriter $LogWriter
             }
         }
         else {

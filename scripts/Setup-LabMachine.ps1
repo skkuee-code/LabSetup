@@ -110,7 +110,35 @@ try {
         if ($taskbarPinResult -and $taskbarPinResult.PinRequests) {
             $baseTaskbarRequests = @($taskbarPinResult.PinRequests | Where-Object { $_ })
         }
-        Set-LabExtraTaskbarPins -Config $config -LogWriter $logWriter -BaseRequests $baseTaskbarRequests -PreservedPins $preservedTaskbarPins
+        $extraPinResult = Set-LabExtraTaskbarPins -Config $config -LogWriter $logWriter -BaseRequests $baseTaskbarRequests -PreservedPins $preservedTaskbarPins
+
+        $allTaskbarRequests = $baseTaskbarRequests
+        if ($extraPinResult -and $extraPinResult.PinRequests) {
+            if ($allTaskbarRequests -and $allTaskbarRequests.Count -gt 0) {
+                $allTaskbarRequests = Merge-LabTaskbarRequests -Primary $allTaskbarRequests -Secondary $extraPinResult.PinRequests
+            }
+            else {
+                $allTaskbarRequests = @($extraPinResult.PinRequests | Where-Object { $_ })
+            }
+        }
+
+        $layoutAlreadyApplied = $false
+        if ($taskbarPinResult -and $taskbarPinResult.LayoutApplied) {
+            $layoutAlreadyApplied = $true
+        }
+        if (-not $layoutAlreadyApplied -and $extraPinResult -and $extraPinResult.LayoutApplied) {
+            $layoutAlreadyApplied = $true
+        }
+
+        if (-not $layoutAlreadyApplied -and $allTaskbarRequests -and $allTaskbarRequests.Count -gt 0) {
+            $defaultLayoutUpdated = Set-LabTaskbarLayout -Config $config -TaskbarRequests $allTaskbarRequests -LogWriter $logWriter -TargetScope 'Default' -SkipExplorerReset
+            if ($defaultLayoutUpdated) {
+                Write-LabLog -Message 'Staged taskbar layout template for future user profiles (default scope).' -LogWriter $logWriter
+            }
+            else {
+                Write-LabLog -Message 'Unable to stage default taskbar layout template; future profiles may miss required taskbar pins.' -LogWriter $logWriter
+            }
+        }
     } else {
         Write-LabLog -Message 'Skipping taskbar pinning (requested).' -LogWriter $logWriter
     }

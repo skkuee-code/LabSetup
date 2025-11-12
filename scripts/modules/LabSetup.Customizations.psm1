@@ -235,6 +235,7 @@ function Set-LabExtraTaskbarPins {
     $failedRequests = New-Object System.Collections.Generic.List[pscustomobject]
     $layoutOnlyCount = 0
     $failedPinCount = 0
+    $layoutApplied = $false
 
     foreach ($entry in $entries) {
         if (-not ($entry -is [System.Collections.IDictionary])) { continue }
@@ -360,12 +361,20 @@ function Set-LabExtraTaskbarPins {
             Write-LabLog -Message ("Preserving {0} existing taskbar pin(s) during extra-pin layout fallback." -f $PreservedPins.Count) -LogWriter $LogWriter
         }
 
-        $layoutApplied = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $layoutInputs -LogWriter $LogWriter
-        if ($layoutApplied) {
+        $layoutSucceeded = Set-LabTaskbarLayout -Config $Config -TaskbarRequests $layoutInputs -LogWriter $LogWriter
+        if ($layoutSucceeded) {
+            $layoutApplied = $true
             Write-LabLog -Message 'Applied LayoutModification fallback for extra taskbar pin(s).' -LogWriter $LogWriter
         }
         else {
             Write-LabLog -Message 'Unable to apply LayoutModification fallback for extra taskbar pin(s); taskbar pins may be incomplete.' -LogWriter $LogWriter
         }
+    }
+
+    return [pscustomobject]@{
+        PinRequests     = $extraRequests.ToArray()
+        LayoutApplied   = $layoutApplied
+        FailedPinCount  = $failedPinCount
+        LayoutOnlyCount = $layoutOnlyCount
     }
 }

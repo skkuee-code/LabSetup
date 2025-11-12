@@ -360,7 +360,10 @@ function Set-LabTaskbarLayout {
         [hashtable]$Config,
         [hashtable[]]$Packages,
         [pscustomobject[]]$TaskbarRequests,
-        [System.IO.StreamWriter]$LogWriter
+        [System.IO.StreamWriter]$LogWriter,
+        [ValidateSet('Both', 'CurrentUser', 'Default')]
+        [string]$TargetScope = 'Both',
+        [switch]$SkipExplorerReset
     )
 
     if (-not $TaskbarRequests -and $Packages) {
@@ -456,13 +459,18 @@ function Set-LabTaskbarLayout {
     $null = $sb.AppendLine('</LayoutModificationTemplate>')
 
     $targets = New-Object System.Collections.Generic.List[string]
-    if ($env:LOCALAPPDATA) {
+    $includeCurrentUser = ($TargetScope -eq 'Both' -or $TargetScope -eq 'CurrentUser')
+    $includeDefaultProfile = ($TargetScope -eq 'Both' -or $TargetScope -eq 'Default')
+
+    if ($includeCurrentUser -and $env:LOCALAPPDATA) {
         $targets.Add((Join-Path -Path (Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Microsoft\Windows\Shell') -ChildPath 'LayoutModification.xml'))
     }
 
-    $defaultProfileRoot = Join-Path -Path $env:SystemDrive -ChildPath 'Users\Default'
-    if (Test-Path -LiteralPath $defaultProfileRoot) {
-        $targets.Add((Join-Path -Path (Join-Path -Path $defaultProfileRoot -ChildPath 'AppData\Local\Microsoft\Windows\Shell') -ChildPath 'LayoutModification.xml'))
+    if ($includeDefaultProfile) {
+        $defaultProfileRoot = Join-Path -Path $env:SystemDrive -ChildPath 'Users\Default'
+        if (Test-Path -LiteralPath $defaultProfileRoot) {
+            $targets.Add((Join-Path -Path (Join-Path -Path $defaultProfileRoot -ChildPath 'AppData\Local\Microsoft\Windows\Shell') -ChildPath 'LayoutModification.xml'))
+        }
     }
 
     if ($targets.Count -eq 0) {
@@ -498,7 +506,11 @@ function Set-LabTaskbarLayout {
         return $false
     }
 
-    Reset-LabTaskbarLayoutState -LogWriter $LogWriter
+    $shouldResetLayout = $includeCurrentUser -and -not $SkipExplorerReset
+    if ($shouldResetLayout) {
+        Reset-LabTaskbarLayoutState -LogWriter $LogWriter
+    }
+
     return $true
 }
 
