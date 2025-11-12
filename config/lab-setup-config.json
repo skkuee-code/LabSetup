@@ -21,6 +21,11 @@
             "silent": true,
             "pinToTaskbar": true,
             "scope": "machine",
+            "installer": {
+                "type": "msi",
+                "downloadUrl": "https://central.github.com/deployments/desktop/desktop/latest/win32?format=msi",
+                "expectedFileName": "GitHubDesktop-latest-x64.msi"
+            },
             "appUserModelId": "com.squirrel.GitHubDesktop.GitHubDesktop",
             "taskbarTargets": [
                 "%ProgramFiles%\\GitHub Desktop\\GitHubDesktop.exe",

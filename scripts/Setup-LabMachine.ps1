@@ -126,11 +126,15 @@ try {
         if ($taskbarPinResult -and $taskbarPinResult.LayoutApplied) {
             $layoutAlreadyApplied = $true
         }
-        if (-not $layoutAlreadyApplied -and $extraPinResult -and $extraPinResult.LayoutApplied) {
+        if ($extraPinResult -and $extraPinResult.LayoutApplied) {
             $layoutAlreadyApplied = $true
         }
 
-        if (-not $layoutAlreadyApplied -and $allTaskbarRequests -and $allTaskbarRequests.Count -gt 0) {
+        if ($allTaskbarRequests -and $allTaskbarRequests.Count -gt 0) {
+            if ($layoutAlreadyApplied) {
+                Write-LabLog -Message 'Taskbar layout fallback already ran for the current user; staging default layout to cover new profiles.' -LogWriter $logWriter
+            }
+
             $defaultLayoutUpdated = Set-LabTaskbarLayout -Config $config -TaskbarRequests $allTaskbarRequests -LogWriter $logWriter -TargetScope 'Default' -SkipExplorerReset
             if ($defaultLayoutUpdated) {
                 Write-LabLog -Message 'Staged taskbar layout template for future user profiles (default scope).' -LogWriter $logWriter
