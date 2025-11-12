@@ -1,0 +1,76 @@
+name: "🐛 バグ報告 (Bug report)"
+description: "不具合の報告"
+title: "[bug] 簡潔なタイトル"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ありがとうございます。できるだけ詳細にご記入ください（画像/ログの添付歓迎）。
+
+  - type: checkboxes
+    id: precheck
+    attributes:
+      label: 事前チェック
+      options:
+        - label: 同様の Issue が無いことを検索で確認しました
+          required: true
+        - label: 最小再現（MVP）を用意しました
+          required: false
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+      description: 何が起きたかを具体的に
+      placeholder: 例）エラー画面が表示、例外スタックトレース 等
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+      description: どうあるべきだったか
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 1,2,3 の順で具体的に
+      placeholder: |
+        1. 環境/設定 …
+        2. コマンド/操作 …
+        3. 結果 …
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 環境情報
+      description: OS/ランタイム/バージョン等
+      value: |
+        - OS:
+        - ランタイム/ブラウザ:
+        - アプリ/ライブラリのバージョン:
+        - インフラ/DB 等:
+      render: markdown
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ/スタックトレース
+      description: 関連するログを貼り付け（自動でコードブロック化）
+      render: shell
+
+  - type: checkboxes
+    id: coc
+    attributes:
+      label: 行動規範
+      description: 送信にあたり [CODE OF CONDUCT](/CODE_OF_CONDUCT.md) に同意してください
+      options:
+        - label: 行動規範に同意します
+          required: true

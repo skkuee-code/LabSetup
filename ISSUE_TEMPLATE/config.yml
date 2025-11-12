@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 質問・使い方（Discussions）
+    url: https://github.com/<OWNER>/<REPO>/discussions
+    about: Q&A や使い方の相談はこちらへ
+  - name: セキュリティ脆弱性の報告（非公開）
+    url: https://github.com/<OWNER>/<REPO>/security/policy
+    about: 脆弱性は SECURITY.md の手順で報告してください

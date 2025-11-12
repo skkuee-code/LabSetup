@@ -1,0 +1,26 @@
+# .github/workflows/stale.yml
+name: Close stale issues
+on:
+  schedule:
+    - cron: '30 1 * * *' # 毎日 01:30 UTC
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          days-before-stale: 60
+          days-before-close: 7
+          stale-issue-message: >
+            この Issue は 60 日間アクティビティがないため stale とマークされました。
+            7 日以内に更新がない場合、自動的にクローズされます。
+          stale-pr-message: >
+            この PR は 60 日間アクティビティがないため stale とマークされました。
+            7 日以内に更新がない場合、自動的にクローズされます。
+          exempt-issue-labels: 'pinned,security'
+          exempt-pr-labels: 'work-in-progress'

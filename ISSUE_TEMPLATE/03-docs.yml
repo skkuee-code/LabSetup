@@ -1,0 +1,33 @@
+name: "📝 ドキュメント改善 (Docs)"
+description: "ドキュメント/サンプルの改善・誤記修正"
+title: "[docs] 簡潔なタイトル"
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: 対象ドキュメントの場所
+      description: URL またはパス
+      placeholder: "例) docs/usage.md の「インストール」節"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: change_type
+    attributes:
+      label: 変更の種類
+      options:
+        - label: 誤記修正/体裁
+        - label: 内容の追加/更新
+        - label: サンプルコードの修正
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 変更提案
+      description: 具体的な修正内容（差分例があると助かります）
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 備考

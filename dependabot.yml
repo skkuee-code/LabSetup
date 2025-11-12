@@ -1,0 +1,49 @@
+# .github/dependabot.yml
+version: 2
+updates:
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly", day: "monday", time: "03:00" }
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+
+  # npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    allow:
+      - dependency-type: "direct"
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+
+  # pip
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+
+  # gomod
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule: { interval: "weekly" }
+
+  # maven
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule: { interval: "weekly" }
+
+  # cargo (Rust)
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule: { interval: "weekly" }
+
+  # docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule: { interval: "weekly" }

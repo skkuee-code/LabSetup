@@ -1,0 +1,6 @@
+# .github/CODEOWNERS
+# 例: ディレクトリごとに責任者（ユーザー or Team）を指定
+*               @your-org/core-team
+/docs/**        @your-org/docs-maintainers
+/src/frontend/** @your-org/frontend
+/src/backend/**  @your-org/backend

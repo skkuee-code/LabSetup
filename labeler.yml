@@ -1,0 +1,10 @@
+# .github/labeler.yml
+# パスに応じて自動ラベル
+frontend:
+  - 'src/**/*.{ts,tsx,js,jsx,css,scss}'
+backend:
+  - 'server/**'
+docs:
+  - 'docs/**'
+ci:
+  - '.github/workflows/**'
