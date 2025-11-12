@@ -306,6 +306,29 @@ function Install-WingetPackage {
         $baseArgs += @('--override', $overrideArgs)
     }
 
+    $architectureDefinition = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'architecture'
+    $selectedArchitecture = $null
+    if ($architectureDefinition) {
+        if ($architectureDefinition -is [System.Collections.IEnumerable] -and -not ($architectureDefinition -is [string])) {
+            foreach ($archValue in $architectureDefinition) {
+                if ([string]::IsNullOrWhiteSpace($archValue)) { continue }
+                $selectedArchitecture = $archValue.Trim()
+                break
+            }
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($architectureDefinition)) {
+            $selectedArchitecture = $architectureDefinition.Trim()
+        }
+    }
+    if ($selectedArchitecture) {
+        $baseArgs += @('--architecture', $selectedArchitecture)
+    }
+
+    $installerType = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'installerType'
+    if ($installerType -and -not [string]::IsNullOrWhiteSpace($installerType)) {
+        $baseArgs += @('--installer-type', $installerType.Trim())
+    }
+
     $requestedScope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
     $scopeCandidates = Get-WingetScopeCandidates -ScopeDefinition $requestedScope
 
