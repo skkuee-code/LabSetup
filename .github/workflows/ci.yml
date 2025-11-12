@@ -21,7 +21,7 @@ jobs:
     permissions: read-all
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4 # Node をセットアップ
+      - uses: actions/setup-node@v6 # Node をセットアップ
         with:
           node-version: 'lts/*'
           cache: npm
