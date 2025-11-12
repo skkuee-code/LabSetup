@@ -289,7 +289,7 @@ function Install-WingetPackage {
     $alwaysInstall = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'alwaysInstall')
     $skipUpgradePrecheck = [bool](Get-OptionalPropertyValue -InputObject $Package -PropertyName 'skipUpgradePrecheck')
 
-    $baseArgs = @(
+    $baseArgsCore = @(
         'install',
         '--id', $id,
         '--exact',
@@ -299,16 +299,19 @@ function Install-WingetPackage {
 
     $declaredVersion = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'version'
     if ($declaredVersion) {
-        $baseArgs += @('--version', $declaredVersion)
+        $baseArgsCore += @('--version', $declaredVersion)
     }
 
     $overrideArgs = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'override'
     if ($overrideArgs) {
-        $baseArgs += @('--override', $overrideArgs)
+        $baseArgsCore += @('--override', $overrideArgs)
     }
+
+    $baseArgs = @($baseArgsCore)
 
     $architectureDefinition = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'architecture'
     $selectedArchitecture = $null
+    $installerFiltersApplied = $false
     if ($architectureDefinition) {
         if ($architectureDefinition -is [System.Collections.IEnumerable] -and -not ($architectureDefinition -is [string])) {
             foreach ($archValue in $architectureDefinition) {
@@ -323,12 +326,15 @@ function Install-WingetPackage {
     }
     if ($selectedArchitecture) {
         $baseArgs += @('--architecture', $selectedArchitecture)
+        $installerFiltersApplied = $true
     }
 
     $installerType = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'installerType'
     if ($installerType -and -not [string]::IsNullOrWhiteSpace($installerType)) {
         $baseArgs += @('--installer-type', $installerType.Trim())
+        $installerFiltersApplied = $true
     }
+    $installerFiltersRemoved = $false
 
     $requestedScope = Get-OptionalPropertyValue -InputObject $Package -PropertyName 'scope'
     $scopeCandidates = Get-WingetScopeCandidates -ScopeDefinition $requestedScope
@@ -410,6 +416,13 @@ function Install-WingetPackage {
                 $script:WingetExitCodes.InvalidCommandLine {
                     if ($attempt.Name -eq 'silent' -and $installAttempts.Count -gt 1) {
                         Write-LabLog -Message "$displayName silent install arguments rejected by winget; retrying without --silent." -LogWriter $LogWriter
+                        continue InstallAttempt
+                    }
+
+                    if ($installerFiltersApplied -and -not $installerFiltersRemoved) {
+                        $installerFiltersRemoved = $true
+                        $baseArgs = @($baseArgsCore)
+                        Write-LabLog -Message "$displayName installer selection arguments rejected; retrying without architecture/installer filters." -LogWriter $LogWriter
                         continue InstallAttempt
                     }
 
