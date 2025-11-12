@@ -81,10 +81,29 @@ function Invoke-ProcessWithSpinner {
     )
 
     $startParams = @{
-        FilePath     = $FilePath
-        ArgumentList = $ArgumentList
-        NoNewWindow  = $true
-        PassThru     = $true
+        FilePath    = $FilePath
+        NoNewWindow = $true
+        PassThru    = $true
+    }
+
+    $effectiveArguments = @()
+    if ($null -ne $ArgumentList) {
+        foreach ($argument in $ArgumentList) {
+            if ($null -eq $argument) {
+                continue
+            }
+
+            $stringArgument = [string]$argument
+            if ($stringArgument.Length -eq 0) {
+                continue
+            }
+
+            $effectiveArguments += $stringArgument
+        }
+    }
+
+    if ($effectiveArguments.Count -gt 0) {
+        $startParams['ArgumentList'] = $effectiveArguments
     }
 
     if ($WorkingDirectory) {
