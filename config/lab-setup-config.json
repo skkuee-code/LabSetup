@@ -74,7 +74,12 @@
                 "%LOCALAPPDATA%\\Programs\\ADI\\LTspice\\LTspice.exe",
                 "%ProgramFiles%\\ADI\\LTspice\\LTspice.exe",
                 "%ProgramFiles%\\LTC\\LTspiceXVII\\XVIIx64.exe"
-            ]
+            ],
+            "installer": {
+                "type": "msi",
+                "downloadUrl": "https://LTspice.analog.com/download/24.1.10/LTspice64.msi",
+                "expectedFileName": "LTspice64.msi"
+            }
         },
         {
             "id": "LayoutEditor",
