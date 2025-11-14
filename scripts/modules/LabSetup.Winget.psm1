@@ -6,6 +6,7 @@ $script:WingetExitCodes = @{
     NoInstalledPackage     = -1978335212
     InstallAlreadyInstalled = -1978334963
     InstallDowngrade       = -1978334962
+    InstallSystemNotSupported = -1978334957
     InvalidCommandLine     = -1978335230
 }
 
@@ -346,6 +347,7 @@ function Install-WingetPackage {
         $script:WingetExitCodes.NoApplicableInstaller,
         $script:WingetExitCodes.InstallAlreadyInstalled,
         $script:WingetExitCodes.InstallDowngrade,
+        $script:WingetExitCodes.InstallSystemNotSupported,
         $script:WingetExitCodes.InvalidCommandLine
     )
 
@@ -432,6 +434,10 @@ function Install-WingetPackage {
                 }
                 $script:WingetExitCodes.InstallDowngrade {
                     Write-LabLog -Message "$displayName install would downgrade the currently-installed version; leaving existing install in place." -LogWriter $LogWriter
+                    return
+                }
+                $script:WingetExitCodes.InstallSystemNotSupported {
+                    Write-LabLog -Message "$displayName is not supported on this system; skipping install." -LogWriter $LogWriter
                     return
                 }
                 $script:WingetExitCodes.InvalidCommandLine {
