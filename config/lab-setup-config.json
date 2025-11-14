@@ -78,7 +78,10 @@
             "installer": {
                 "type": "msi",
                 "downloadUrl": "https://LTspice.analog.com/download/24.1.10/LTspice64.msi",
-                "expectedFileName": "LTspice64.msi"
+                "expectedFileName": "LTspice64.msi",
+                "properties": [
+                    "AI_INSTALLPERUSER=3"
+                ]
             }
         },
         {

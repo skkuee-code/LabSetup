@@ -93,10 +93,32 @@ function Install-ManualPackage {
                 '/norestart',
                 'ALLUSERS=1'
             )
+
+            if ($installer.ContainsKey('properties') -and $installer['properties']) {
+                $rawProperties = $installer['properties']
+                $properties = @()
+
+                if ($rawProperties -is [System.Collections.IEnumerable] -and -not ($rawProperties -is [string])) {
+                    foreach ($prop in $rawProperties) {
+                        if ([string]::IsNullOrWhiteSpace($prop)) { continue }
+                        $properties += $prop.Trim()
+                    }
+                }
+                elseif (-not [string]::IsNullOrWhiteSpace($rawProperties)) {
+                    $properties += $rawProperties.Trim()
+                }
+
+                if ($properties.Count -gt 0) {
+                    $msiArgs += $properties
+                }
+            }
+
             Write-LabLog -Message "Installing $($Package.displayName) via msiexec..." -LogWriter $LogWriter
             $process = Invoke-ProcessWithSpinner -FilePath $msiExec -ArgumentList $msiArgs -Activity "Installing $($Package.displayName) via msiexec"
-            if ($process.ExitCode -ne 0) {
-                throw "msiexec failed for $($Package.displayName) with exit code $($process.ExitCode)."
+            $exitCode = Get-LabProcessExitCode -Process $process
+            if ($exitCode -ne 0) {
+                $exitCodeLabel = if ($null -ne $exitCode) { $exitCode } else { 'unknown' }
+                throw "msiexec failed for $($Package.displayName) with exit code $exitCodeLabel."
             }
         }
         default {
