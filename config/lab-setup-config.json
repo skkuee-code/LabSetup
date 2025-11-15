@@ -20,6 +20,7 @@
             "displayName": "GitHub Desktop",
             "silent": true,
             "pinToTaskbar": true,
+            "taskbarPinMode": "layout",
             "scope": "user",
             "architecture": "x64",
             "installerType": "exe",
@@ -46,6 +47,7 @@
             "displayName": "Google Chrome",
             "silent": true,
             "pinToTaskbar": true,
+            "taskbarPinMode": "layout",
             "appUserModelId": "Chrome",
             "taskbarTargets": [
                 "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
