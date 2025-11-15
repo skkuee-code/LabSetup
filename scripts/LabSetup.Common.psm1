@@ -14,6 +14,7 @@ $script:LabSetupModuleSegments = @(
     'modules\LabSetup.Toolchain.Volta.psm1',
     'modules\LabSetup.Toolchain.Uv.psm1',
     'modules\LabSetup.Toolchain.Git.psm1',
+    'modules\LabSetup.Toolchain.PowerShell.psm1',
     'modules\LabSetup.TeXLive.psm1'
 )
 
@@ -92,6 +93,7 @@ $LabSetupExportedFunctions = @(
     'Test-UvPythonInstallResult',
     'Set-UvToolchain',
     'Set-GitLfsConfiguration',
+    'Set-PowerShellToolchain',
     'Resolve-TeXLivePathValue',
     'Get-TeXLiveBinDirectory',
     'Get-TeXLiveUtilityCandidates',

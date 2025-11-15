@@ -148,6 +148,7 @@ try {
     }
 
     Set-WindowsTerminalDefaultProfile -Config $config -LogWriter $logWriter
+    Set-PowerShellToolchain -Config $config -LogWriter $logWriter
 
     $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     if ($machinePath) {
