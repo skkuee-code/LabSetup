@@ -87,6 +87,15 @@ if ($resolvedSource -ieq $userProfile) {
     }
 }
 
+$repositoryIsUnderSource = $resolvedRepositoryRoot.StartsWith($resolvedSource, [System.StringComparison]::OrdinalIgnoreCase)
+if ($repositoryIsUnderSource -and $resolvedRepositoryRoot -ne $resolvedSource) {
+    Write-Warning "SourcePath '$resolvedSource' is a parent of the LabSetup repository root '$resolvedRepositoryRoot'. Using the repository root instead to avoid copying unrelated files. Provide -SourcePath explicitly if you intended to mirror the broader directory."
+    $resolvedSource = $resolvedRepositoryRoot
+}
+elseif (-not $resolvedSource.StartsWith($resolvedRepositoryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "The SourcePath '$resolvedSource' is not inside the LabSetup repository root '$resolvedRepositoryRoot'. Specify the LabSetup directory explicitly (e.g. $resolvedRepositoryRoot)."
+}
+
 Write-Host "Deploying LabSetup from $resolvedSource to $DestinationPath ..." -ForegroundColor Cyan
 
 if (-not (Test-Path -LiteralPath $DestinationPath -PathType Container)) {
