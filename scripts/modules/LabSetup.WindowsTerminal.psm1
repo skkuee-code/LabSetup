@@ -285,7 +285,7 @@ function Set-WindowsTerminalDefaultProfileForPath {
     }
 
     $profilesSection = $settings['profiles']
-    if (-not ($profilesSection -is [System.Collections.IDictionary])) {
+    if ($profilesSection -and -not ($profilesSection -is [System.Collections.IDictionary])) {
         $profilesSection = ConvertTo-Hashtable -InputObject $profilesSection
     }
     if (-not $profilesSection) {
