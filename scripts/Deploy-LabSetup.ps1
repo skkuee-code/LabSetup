@@ -93,7 +93,8 @@ if ($repositoryIsUnderSource -and $resolvedRepositoryRoot -ne $resolvedSource) {
     $resolvedSource = $resolvedRepositoryRoot
 }
 elseif (-not $resolvedSource.StartsWith($resolvedRepositoryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "The SourcePath '$resolvedSource' is not inside the LabSetup repository root '$resolvedRepositoryRoot'. Specify the LabSetup directory explicitly (e.g. $resolvedRepositoryRoot)."
+    Write-Warning "SourcePath '$resolvedSource' is not under the LabSetup repository root '$resolvedRepositoryRoot'. Using the repository root instead. Provide -SourcePath explicitly inside the LabSetup repository if you intended to deploy a subdirectory."
+    $resolvedSource = $resolvedRepositoryRoot
 }
 
 Write-Host "Deploying LabSetup from $resolvedSource to $DestinationPath ..." -ForegroundColor Cyan
