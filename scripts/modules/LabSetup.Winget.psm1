@@ -19,11 +19,18 @@ $script:WingetDefaultAcceptableExitCodes = @(
 ) | Where-Object { $null -ne $_ } | Select-Object -Unique
 
 function Get-WingetExecutable {
-    $command = Get-Command -Name winget -ErrorAction SilentlyContinue
-    if ($null -eq $command) {
-        throw 'winget executable not found in PATH.'
+    $candidates = @(
+        (Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Microsoft\WindowsApps\winget.exe'),
+        'winget',
+        'winget.exe'
+    )
+
+    $resolved = Resolve-ExecutableFromCandidates -Candidates $candidates
+    if (-not $resolved) {
+        throw 'winget executable not found. Ensure App Installer (winget) is installed for the current user.'
     }
-    return $command.Source
+
+    return $resolved
 }
 
 function Invoke-Winget {
