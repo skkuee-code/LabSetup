@@ -33,7 +33,7 @@ jobs:
         run: npm test --if-present
       - name: Upload junit/coverage (if any)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: node-test-artifacts
           path: |
@@ -67,7 +67,7 @@ jobs:
         run: pytest -q || true
       - name: Upload junit/coverage (if any)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: python-test-artifacts
           path: |
@@ -91,7 +91,7 @@ jobs:
         run: go test ./... -v
       - name: Upload test cache (if any)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: go-test-artifacts
           path: |
@@ -113,7 +113,7 @@ jobs:
         run: mvn -B -ntp -DskipTests=false verify
       - name: Upload surefire reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: maven-test-artifacts
           path: |
@@ -138,7 +138,7 @@ jobs:
         run: cargo test --all --verbose
       - name: Upload artifacts (if any)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rust-test-artifacts
           path: |
